@@ -66,6 +66,7 @@ public static class Program
             TestDeployRestore(modRoot, work);
             TestForeignFileProtection(modRoot, work);
             TestProxyOccupation(modRoot, work);
+            TestSingleProxyInvariant(modRoot, work);
             TestAdopt(modRoot, work);
             TestDetection(modRoot, work);
             TestModSourceLocator(modRoot, work);
@@ -537,6 +538,87 @@ public static class Program
         Check("给出了解决提示", result.Message.Contains("占用"), result.Message);
         Check("所有占用文件保持原样",
             ModSource.ProxyCandidates.All(n => Sha(Path.Combine(dir, n)) == hashes[n]));
+    }
+
+    /// <summary>
+    /// Regression for a crash caused by two proxies being live at once.
+    ///
+    /// The mod requires exactly one proxy in the game folder — the game loads every entry name it
+    /// recognises, so a second one runs a second inference pipeline. This happened for real when the
+    /// library was reset (losing the deployment record), and the next deploy then picked a free name
+    /// instead of reusing the installed proxy, leaving both in place.
+    /// </summary>
+    private static void TestSingleProxyInvariant(string modRoot, string work)
+    {
+        Section("游戏目录只应存在一个本项目代理");
+        if (SkipWithoutModFiles("单一代理约束")) return;
+
+        var source = new ModSource(modRoot);
+        var dir = MakeGameDir(work, "GameOneProxy");
+
+        // First deployment: takes the default entry.
+        var game = new GameEntry { Name = "GameOneProxy", RenderDir = dir, PreferredProxy = DeploymentService.AutoProxy };
+        var first = DeploymentService.Deploy(game, source);
+        Check("首次部署成功", first.Ok, first.Message);
+        var firstProxy = game.Deployment?.ProxyName ?? "";
+        Check("首次部署使用默认入口 version.dll", firstProxy == "version.dll", firstProxy);
+
+        // Simulate the library being reset: the record is gone, but the file is still in the game
+        // folder. The next deploy must adopt it rather than installing a second name.
+        game.Deployment = null;
+        var second = DeploymentService.Deploy(game, source);
+        Check("丢失记录后再次部署仍成功", second.Ok, second.Message);
+        Check("复用已安装的入口而非另选一个",
+            game.Deployment?.ProxyName == firstProxy,
+            $"首次 {firstProxy} → 再次 {game.Deployment?.ProxyName}");
+
+        var ours = ModSource.ProxyCandidates
+            .Where(n => File.Exists(Path.Combine(dir, n)) && DeploymentService.IsProjectSigned(Path.Combine(dir, n)))
+            .ToList();
+        Check("游戏目录里只有一个本项目代理", ours.Count == 1, string.Join("、", ours));
+
+        // Even if a stray second proxy is planted (as happened in the field), deploying again must
+        // clean it up rather than leaving both.
+        var stray = ModSource.ProxyCandidates.First(n => !string.Equals(n, firstProxy, StringComparison.OrdinalIgnoreCase));
+        File.Copy(Path.Combine(dir, firstProxy), Path.Combine(dir, stray), overwrite: true);
+        Check("已埋入第二个代理以便验证清理",
+            File.Exists(Path.Combine(dir, stray)) && DeploymentService.IsProjectSigned(Path.Combine(dir, stray)));
+
+        // While both are present, the status must call it out — the user needs to know before
+        // launching the game, not after it crashes.
+        var planted = new GameEntry { Name = game.Name, RenderDir = dir, Deployment = game.Deployment };
+        DeploymentService.Check(planted);
+        Console.WriteLine("        状态: " + planted.StatusText + " — " + planted.StatusDetail);
+        Check("两个代理共存时状态提示异常",
+            planted.StatusDetail.Contains("代理"), planted.StatusDetail);
+        Check("状态不是正常的已部署", planted.Status != GameStatus.Deployed, planted.StatusText);
+
+        game.Deployment = null;
+        var third = DeploymentService.Deploy(game, source);
+        Check("再次部署成功", third.Ok, third.Message);
+        Check("多余的代理被清除", !File.Exists(Path.Combine(dir, stray)), stray);
+
+        ours = ModSource.ProxyCandidates
+            .Where(n => File.Exists(Path.Combine(dir, n)) && DeploymentService.IsProjectSigned(Path.Combine(dir, n)))
+            .ToList();
+        Check("清理后仍只有一个代理", ours.Count == 1, string.Join("、", ours));
+
+        var restore = DeploymentService.Restore(game, removeLogs: false);
+        Check("恢复成功", restore.Ok, restore.Message);
+
+        // No proxy of ours may survive. The INI is a different matter: if a deploy displaced a
+        // pre-existing file, restore correctly brings that file back, so its presence is expected
+        // and not a leftover. Check the INI's content rather than its existence.
+        var leftoverProxies = ModSource.ProxyCandidates
+            .Where(n => File.Exists(Path.Combine(dir, n)))
+            .ToList();
+        Check("恢复后无代理残留", leftoverProxies.Count == 0, "残留：" + string.Join("、", leftoverProxies));
+
+        var iniPath = Path.Combine(dir, ModSource.IniName);
+        var iniIsOurs = File.Exists(iniPath) && ModSource.ReadVersion(iniPath) is not null;
+        Check("恢复后 INI 不是本项目生成的那份", !iniIsOurs, "仍是本项目的配置");
+
+        foreach (var line in restore.Lines) Console.WriteLine("        · " + line);
     }
 
     private static void TestAdopt(string modRoot, string work)

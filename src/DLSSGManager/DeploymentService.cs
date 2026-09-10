@@ -309,6 +309,14 @@ public static class DeploymentService
     }
 
     /// <summary>Auto-pick a name that is free, so an occupied entry is reported rather than silently overwritten.</summary>
+    /// <summary>
+    /// Chooses which proxy entry name to use.
+    ///
+    /// An existing proxy of this project is reused in preference to a free name, because the game
+    /// loads every entry name it recognises: installing under a second name would leave two proxies
+    /// live at once, and the mod requires exactly one. Switching names is only for the case where
+    /// another product already occupies the current one.
+    /// </summary>
     private static string? PickFreeProxy(GameEntry game)
     {
         var wanted = game.PreferredProxy;
@@ -319,13 +327,17 @@ public static class DeploymentService
                 : null;
         }
 
+        // Reuse our own installation rather than picking a second, unoccupied name.
+        var installed = FindInstalledProxy(game.RenderDir);
+        if (installed is not null) return installed;
+
         foreach (var name in ModSource.ProxyCandidates)
         {
             var path = Path.Combine(game.RenderDir, name);
             if (!File.Exists(path)) return name;
         }
 
-        return FindInstalledProxy(game.RenderDir);
+        return ModSource.ProxyCandidates[0];
     }
 
     /// <summary>
@@ -408,24 +420,33 @@ public static class DeploymentService
         var restoreFolder = Path.Combine(AppPaths.RestoreRoot, game.Id, DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         var backups = new List<BackupItem>();
 
-        var staleProxy = prev is not null &&
-                         !string.Equals(prev.ProxyName, proxy, StringComparison.OrdinalIgnoreCase) &&
-                         ModSource.ProxyCandidates.Contains(prev.ProxyName, StringComparer.OrdinalIgnoreCase)
-            ? Path.Combine(game.RenderDir, prev.ProxyName)
-            : null;
+        // The mod requires exactly one proxy in the game folder: the game loads every entry name it
+        // recognises, so two would run two inference pipelines at once. Rather than trusting the
+        // deployment record (which can be absent, e.g. after the library is reset), scan the entry
+        // names for anything signed by this project and remove all but the one being installed.
+        var redundantProxies = ModSource.ProxyCandidates
+            .Where(n => !string.Equals(n, proxy, StringComparison.OrdinalIgnoreCase))
+            .Select(n => (Name: n, Path: Path.Combine(game.RenderDir, n)))
+            .Where(x => File.Exists(x.Path) && IsOurs(x.Path, null))
+            .ToList();
 
         try
         {
-            // Anything that is not ours gets a copy in the restore store before it is displaced.
-            if (File.Exists(iniDest) && !IsOurs(iniDest, prev?.IniSha256) && prev is null)
+            // Displace anything that is not ours, keeping a copy so restore can put it back.
+            //
+            // Ownership is decided by content, not only by the recorded hash: the INI we generate is
+            // meant to be edited (that is what the profile settings do), so its hash drifts from the
+            // record. Judging by hash alone would classify our own file as a foreign one, back it up,
+            // and then restore it on uninstall — leaving our config behind in the game folder.
+            if (File.Exists(iniDest) && !LooksLikeProjectIni(iniDest) && !IsOurs(iniDest, prev?.IniSha256))
             {
                 backups.Add(Backup(iniDest, restoreFolder, r));
             }
 
-            if (staleProxy is not null && File.Exists(staleProxy))
+            foreach (var (name, path) in redundantProxies)
             {
-                r.Note($"切换入口名：移除旧代理 {Path.GetFileName(staleProxy)}");
-                File.Delete(staleProxy);
+                r.Note($"移除多余的代理入口 {name}（本项目只允许保留一个）");
+                File.Delete(path);
             }
 
             var tmp = proxyDest + ".dlssgtmp";
@@ -513,23 +534,20 @@ public static class DeploymentService
         try
         {
             // 1) The proxy we recorded; if there is no record, any project-signed DLL in a known entry name.
-            var proxyNames = prev is not null && ModSource.ProxyCandidates.Contains(prev.ProxyName, StringComparer.OrdinalIgnoreCase)
-                ? new List<string> { prev.ProxyName }
-                : ModSource.ProxyCandidates.ToList();
-
-            foreach (var name in proxyNames)
+            // Scan every candidate entry name rather than only the recorded one: a stray proxy can be
+            // present (a name switch that predates the single-proxy rule, a restored backup, an
+            // earlier record lost from the library), and leaving it behind would keep a proxy live in
+            // a folder the user expects to be clean.
+            foreach (var name in ModSource.ProxyCandidates)
             {
                 var path = Path.Combine(game.RenderDir, name);
                 if (!File.Exists(path)) continue;
 
+                // Only the recorded name has a recorded hash; for any other name the file must prove
+                // itself by carrying the project's signature.
                 var recorded = prev is not null && string.Equals(prev.ProxyName, name, StringComparison.OrdinalIgnoreCase)
                     ? prev.ProxySha256
                     : null;
-
-                if (prev is null && !IsProjectSigned(path))
-                {
-                    continue;
-                }
 
                 if (IsOurs(path, recorded))
                 {
@@ -568,7 +586,7 @@ public static class DeploymentService
 
             // 3) Copies an anti-cheat quarantined by renaming (e.g. version.dll.3787982156). Only
             //    files that are provably ours are removed, so another tool's ".bak" survives.
-            foreach (var name in proxyNames)
+            foreach (var name in ModSource.ProxyCandidates)
             {
                 foreach (var copy in AntiCheat.FindQuarantinedCopies(game.RenderDir, name, prev?.ProxySha256))
                 {
@@ -703,6 +721,22 @@ public static class DeploymentService
 
         // Cheap enough to run on every check, and it is what drives the warning banner.
         game.Protection = AntiCheat.Scan(game.RenderDir);
+
+        // More than one proxy of ours is a hard fault: the game loads every entry name it recognises,
+        // so two would run two inference pipelines and crash. This is reported ahead of the normal
+        // status because it needs fixing before the game is launched, not merely noted.
+        var liveProxies = ModSource.ProxyCandidates
+            .Where(n => File.Exists(Path.Combine(game.RenderDir, n)) && IsProjectSigned(Path.Combine(game.RenderDir, n)))
+            .ToList();
+
+        if (liveProxies.Count > 1)
+        {
+            game.Status = GameStatus.Modified;
+            game.StatusDetail =
+                $"发现 {liveProxies.Count} 个代理（{string.Join("、", liveProxies)}）。" +
+                "本项目只允许保留一个，多个同时存在会导致游戏崩溃。点「一键恢复」清理后重新部署。";
+            return;
+        }
 
         var prev = game.Deployment;
         if (prev is null)
