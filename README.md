@@ -291,9 +291,9 @@ dotnet build -c Release
 
 ## 授权
 
-本仓库的源代码采用 [MIT 许可](LICENSE)。
+本仓库的源代码（管理器的 C# 实现）采用 [MIT 许可](LICENSE)。
 
-不含 dlssg_for_sm86 发布的任何文件——那些是上游项目的产物，本项目仅按需下载并复制到游戏目录，不转发、不再授权。原因见 [docs/mod-files.md](docs/mod-files.md)。
+**MIT 许可不覆盖 dlssg_for_sm86 发布的任何文件。** 它们由上游项目提供，本项目仅在其发布位置按需下载并复制到游戏目录，不转发、不再授权。原因见 [docs/mod-files.md](docs/mod-files.md)。
 
 使用本 mod 前请阅读上游仓库的说明，尤其是杀软误报、显存占用和反作弊相关的限制。
 

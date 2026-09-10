@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 DLSSGManager contributors
+Copyright (c) 2026 DLSSG 30s Manager contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,10 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-本许可仅覆盖本仓库的源代码（管理器的 C# 实现）。
-
-它不覆盖 dlssg_for_sm86 发布的任何文件。那些文件由上游项目提供，本项目仅在其
-发布位置按需下载并复制到游戏目录，不转发、不再授权。相关说明见 docs/mod-files.md。
