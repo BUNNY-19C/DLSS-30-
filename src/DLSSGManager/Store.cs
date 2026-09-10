@@ -37,8 +37,14 @@ public static class AppPaths
     public static string RestoreRoot => Path.Combine(Root, "restore");
     public static string LogFile => Path.Combine(Root, "manager.log");
 
-    /// <summary>Mod files shipped next to the app, used as the default source when the user has not picked one.</summary>
+    /// <summary>Mod files shipped next to the app, used when this copy is portable.</summary>
     public static string BundledModDir => Path.Combine(AppContext.BaseDirectory, "mod");
+
+    /// <summary>
+    /// Per-user mod folder, used when the app is installed somewhere read-only such as
+    /// <c>C:\Program Files</c>. Keeps the download working without requiring elevation.
+    /// </summary>
+    public static string UserModDir => Path.Combine(Root, "mod");
 
     public static void EnsureCreated()
     {

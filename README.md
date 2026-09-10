@@ -17,9 +17,29 @@
 
 ## 直接用（推荐）
 
-到 [**Releases**](../../releases/latest) 下载 `DLSSGManager.exe`，双击即可。**不需要安装 .NET 或任何运行环境**——单文件自包含，约 63 MB。
+到 [**Releases**](../../releases/latest) 下载，两种用法任选：
+
+| 文件 | 说明 |
+|---|---|
+| `DLSSGManager-*-setup.exe` | **安装包**。安装路径可选，带卸载程序，创建开始菜单项 |
+| `DLSSGManager.exe` | **绿色版**。单文件，放到任意目录双击即可 |
+
+两者都不需要安装 .NET 或任何运行环境。
 
 首次启动会问你要不要获取 Mod 文件（约 75 MB），选「是」等它下载完就能用。
+
+### 安装包说明
+
+运行后按向导选择安装路径（默认 `C:\Program Files\DLSSG Manager`，可改到任意位置）。
+
+安装目录只放程序本体。Mod 文件在首次启动时下载，位置取决于安装方式：
+
+- **安装版** → `%APPDATA%\DLSSGManager\mod`
+- **绿色版** → 程序旁的 `mod\` 子目录（该目录不可写时同样回退到 `%APPDATA%`）
+
+安装版这样安排是为了让**卸载不影响数据**：卸载只删除程序本体，会单独询问是否清除游戏列表、备份和已下载的 Mod 文件；保留的话重装后不必重新下载 75 MB。
+
+### 使用
 
 1. **扫描游戏** —— 点「扫描 Steam 库」，或用「扫描文件夹…」选某个游戏盘，也可以点「添加游戏…」直接指定单个游戏目录。
    程序靠 `nvngx_dlssg.dll` 定位游戏：游戏必须自带这个文件才支持 DLSS 帧生成，所以列表里不会出现无关的程序。Steam 库会自动读注册表和 `libraryfolders.vdf`，包含所有自定义库路径。
@@ -29,7 +49,7 @@
 
 要撤销就点「一键恢复」。批量操作在窗口底部：「全部部署」/「全部恢复」。
 
-下载后可以核对哈希，发布页附有 `DLSSGManager.exe.sha256`：
+下载后可以核对哈希，发布页附有 `SHA256SUMS.txt`：
 
 ```powershell
 Get-FileHash DLSSGManager.exe -Algorithm SHA256
@@ -172,9 +192,10 @@ Get-FileHash DLSSGManager.exe -Algorithm SHA256
 DLSSGManager/
 ├─ src/DLSSGManager/          ← 源码（WPF，.NET 8）
 ├─ test/Harness/              ← 测试与诊断工具
+├─ installer/                 ← Inno Setup 安装脚本（含简体中文语言文件）
 ├─ docs/mod-files.md          ← 为什么仓库不含 mod 二进制、如何获取
 ├─ mod/                       ← Mod 文件源（不提交，首次运行后自动下载）
-└─ dist/                      ← 发布产物（不提交）
+├─ publish/ dist/             ← 发布产物（不提交）
 ```
 
 程序运行时的数据：
@@ -204,14 +225,25 @@ dotnet publish src/DLSSGManager/DLSSGManager.csproj \
   -p:IncludeNativeLibrariesForSelfExtract=true \
   -p:EnableCompressionInSingleFile=true \
   -p:DebugType=none \
-  -o dist
+  -o publish
 ```
 
-`dist/DLSSGManager.exe` 约 63 MB，可直接拷给别人用。
+`publish/DLSSGManager.exe` 约 63 MB，可直接拷给别人用。
 
 如果只想在本机快速跑，把 `--self-contained true` 换成 `false`，产物约 260 KB，但目标机器需要 .NET 8 运行时。
 
-发布成品由 GitHub Actions 自动构建：推送 `v*` 标签（如 `git tag v1.0.0 && git push origin v1.0.0`）会构建、测试并创建 Release，附上 exe 与 SHA256。也可以在 Actions 页面手动触发。
+### 构建安装包
+
+安装包用 [Inno Setup 6](https://jrsoftware.org/isdl.php) 编译（`installer/languages/` 下的简体中文语言文件随仓库提供，因为 Inno Setup 安装包未内置它）：
+
+```powershell
+# 先完成上面的 publish，再：
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=1.1.0 installer\setup.iss
+```
+
+产物是 `dist/DLSSGManager-<版本>-setup.exe`。脚本里的设计取舍（Mod 文件为何不装到安装目录、卸载为何保留数据）写在 `installer/setup.iss` 的头部注释里。
+
+发布成品由 GitHub Actions 自动构建：推送 `v*` 标签（如 `git tag v1.1.0 && git push origin v1.1.0`）会构建、测试、编译安装包并创建 Release，附上两个 exe 与 `SHA256SUMS.txt`。也可以在 Actions 页面手动触发。
 
 测试（153 项，覆盖部署/恢复/备份保护/反作弊识别与拦截/目录解析/接管/INI 渲染/持久化/下载 URL 策略）：
 

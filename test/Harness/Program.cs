@@ -630,6 +630,44 @@ public static class Program
             !_hasModFiles
             || (found is not null && string.Equals(Path.GetFullPath(found), Path.GetFullPath(modRoot), StringComparison.OrdinalIgnoreCase)),
             found ?? "(无)");
+
+        // Installed builds live under Program Files, where the app cannot write without elevation.
+        // Writability therefore decides between "portable" and "per-user data" placement.
+        var writable = Path.Combine(work, "WritableProbe");
+        Check("可写目录判定为可写", ModSourceLocator.IsWritable(writable), writable);
+
+        // A path that cannot exist (a file used as a parent) must report not-writable, not throw.
+        var fileAsParent = Path.Combine(work, "FileNotDir");
+        File.WriteAllText(fileAsParent, "x");
+        Check("不可创建的路径判定为不可写",
+            !ModSourceLocator.IsWritable(Path.Combine(fileAsParent, "sub")),
+            fileAsParent);
+
+        Check("非法字符路径判定为不可写",
+            !ModSourceLocator.IsWritable(Path.Combine(work, "bad|name")),
+            "bad|name");
+
+        // Installed copies keep user data under %APPDATA% so uninstalling never discards the
+        // downloaded mod files. The signal is Inno Setup's uninstaller beside the executable.
+        Console.WriteLine("      当前是否安装版: " + ModSourceLocator.IsInstalledCopy());
+        Check("未安装的副本不被判定为安装版", !ModSourceLocator.IsInstalledCopy(), AppContext.BaseDirectory);
+
+        var portable = Path.Combine(work, "PortableCopy");
+        Directory.CreateDirectory(portable);
+        Check("无卸载程序的目录不算安装版", !ModSourceLocator.IsInstalledCopyIn(portable), portable);
+
+        var installed = Path.Combine(work, "InstalledCopy");
+        Directory.CreateDirectory(installed);
+        File.WriteAllBytes(Path.Combine(installed, "unins000.exe"), RandomNumberGenerator.GetBytes(128));
+        Check("存在 unins000.exe 的目录判定为安装版", ModSourceLocator.IsInstalledCopyIn(installed), installed);
+
+        var installedAlt = Path.Combine(work, "InstalledCopy2");
+        Directory.CreateDirectory(installedAlt);
+        File.WriteAllBytes(Path.Combine(installedAlt, "unins001.exe"), RandomNumberGenerator.GetBytes(128));
+        Check("其他编号的卸载程序同样识别", ModSourceLocator.IsInstalledCopyIn(installedAlt), installedAlt);
+
+        Check("不存在的目录不抛异常", !ModSourceLocator.IsInstalledCopyIn(Path.Combine(work, "NoSuchDir")));
+        Check("空路径不抛异常", !ModSourceLocator.IsInstalledCopyIn(""));
     }
 
     private static void TestPathGuard(string work)

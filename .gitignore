@@ -2,6 +2,10 @@
 [Bb]in/
 [Oo]bj/
 /dist/
+/publish/
+
+# 安装包编译中间产物
+/installer/Output/
 
 # Mod 文件源：第三方版权作品，不随本仓库分发。
 #

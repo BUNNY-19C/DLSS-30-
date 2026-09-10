@@ -30,13 +30,10 @@ public static class ModSourceLocator
     {
         if (LooksLikeSource(configuredPath)) return configuredPath;
 
-        var beside = AppPaths.BundledModDir;
-        if (LooksLikeSource(beside)) return beside;
-
-        var repo = FindRepositoryRoot();
-        if (repo is not null)
+        // Searching every candidate means an installed copy still finds files a portable copy
+        // downloaded earlier (and the reverse), instead of silently re-downloading 75 MB.
+        foreach (var candidate in CandidateFolders())
         {
-            var candidate = Path.Combine(repo, "mod");
             if (LooksLikeSource(candidate)) return candidate;
         }
 
@@ -44,9 +41,35 @@ public static class ModSourceLocator
     }
 
     /// <summary>
-    /// Where downloads should be written. Reuses an existing source so neither a checkout nor a
-    /// shipped build ends up with a stray second copy; otherwise targets <c>mod\</c> at the repository
-    /// root when running from source, or beside the executable when shipped.
+    /// True when this copy was put in place by the installer rather than unzipped by hand.
+    ///
+    /// Inno Setup always writes <c>unins000.exe</c> beside the program, so its presence is a reliable
+    /// signal. The distinction matters for where data goes: an installed copy keeps user data (game
+    /// list, backups, downloaded mod files) under %APPDATA% so uninstalling the program never throws
+    /// away a 75 MB download, while a portable copy stays self-contained.
+    /// </summary>
+    public static bool IsInstalledCopy() => IsInstalledCopyIn(AppContext.BaseDirectory);
+
+    /// <summary>Testable form of <see cref="IsInstalledCopy"/>, checking a specific folder.</summary>
+    public static bool IsInstalledCopyIn(string directory)
+    {
+        try
+        {
+            return Directory.Exists(directory)
+                   && Directory.EnumerateFiles(directory, "unins*.exe").Any();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Where downloads should be written.
+    ///
+    /// Order: an existing source wins (so nothing is downloaded twice); then the per-user folder for
+    /// installed copies; then the repository for a checkout; then beside the executable, falling back
+    /// to the user profile if that location is read-only (e.g. an exe dropped into Program Files).
     /// </summary>
     public static string ResolveTarget(string? configuredPath)
     {
@@ -56,10 +79,55 @@ public static class ModSourceLocator
         var existing = FindExisting(null);
         if (existing is not null) return existing;
 
+        if (IsInstalledCopy()) return AppPaths.UserModDir;
+
         var repo = FindRepositoryRoot();
         if (repo is not null) return Path.Combine(repo, "mod");
 
+        // A portable copy writes beside itself; a copy placed in a read-only folder cannot.
+        if (!IsWritable(AppPaths.BundledModDir)) return AppPaths.UserModDir;
+
         return AppPaths.BundledModDir;
+    }
+
+    /// <summary>
+    /// True when the folder can be written to, creating it first if needed. Used to decide whether
+    /// this copy is portable or installed into a protected location.
+    /// </summary>
+    public static bool IsWritable(string directory)
+    {
+        try
+        {
+            Directory.CreateDirectory(directory);
+
+            var probe = Path.Combine(directory, ".write_probe_" + Guid.NewGuid().ToString("N")[..8]);
+            File.WriteAllText(probe, "probe");
+            File.Delete(probe);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Folders worth searching for existing mod files, in preference order.
+    ///
+    /// A checkout is only searched when the executable is not part of an installed copy: an installed
+    /// program must not pick up a stray <c>mod\</c> folder from an unrelated parent directory.
+    /// </summary>
+    private static IEnumerable<string> CandidateFolders()
+    {
+        if (!IsInstalledCopy())
+        {
+            var repo = FindRepositoryRoot();
+            if (repo is not null) yield return Path.Combine(repo, "mod");
+
+            yield return AppPaths.BundledModDir;
+        }
+
+        yield return AppPaths.UserModDir;
     }
 
     /// <summary>
