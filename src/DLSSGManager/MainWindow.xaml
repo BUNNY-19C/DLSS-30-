@@ -359,7 +359,7 @@
                         <StackPanel x:Name="DetailPanel" Visibility="Collapsed">
                             <Border x:Name="AntiCheatBanner" Background="#3A2A1A" BorderBrush="#6B4A1A"
                                     BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,12"
-                                    Visibility="{Binding AntiCheatBannerVisibility}">
+                                    Visibility="{Binding ShowAntiCheatBanner, Converter={StaticResource BoolToVis}}">
                                 <StackPanel>
                                     <TextBlock Text="{Binding AntiCheatTitle}" FontWeight="SemiBold"
                                                Foreground="#FFC46B" TextWrapping="Wrap" />

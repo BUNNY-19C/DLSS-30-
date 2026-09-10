@@ -3,7 +3,6 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
-using System.Windows;
 
 namespace DLSSGManager;
 
@@ -151,7 +150,7 @@ public sealed class GameEntry : Observable
         {
             if (!Set(ref _protection, value)) return;
             Raise(nameof(HasKernelAntiCheat));
-            Raise(nameof(AntiCheatBannerVisibility));
+            Raise(nameof(ShowAntiCheatBanner));
             Raise(nameof(AntiCheatTitle));
             Raise(nameof(AntiCheatBody));
         }
@@ -163,10 +162,12 @@ public sealed class GameEntry : Observable
     /// <summary>
     /// The banner only appears for games the mod cannot work on. A clean game gets no banner at all —
     /// an "all clear" notice is noise, and any wording next to a warning icon reads as bad news.
+    ///
+    /// Exposed as a bool rather than a Visibility so this model stays free of WPF types; the view
+    /// converts it. That keeps the deployment logic testable from a plain console project.
     /// </summary>
     [JsonIgnore]
-    public Visibility AntiCheatBannerVisibility =>
-        Protection?.HasKernelAntiCheat == true ? Visibility.Visible : Visibility.Collapsed;
+    public bool ShowAntiCheatBanner => Protection?.HasKernelAntiCheat == true;
 
     [JsonIgnore] public string AntiCheatTitle => Protection is null ? "" : "⚠ " + Protection.Summary;
 

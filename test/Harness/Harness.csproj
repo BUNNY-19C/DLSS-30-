@@ -3,13 +3,15 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Harness</AssemblyName>
     <RootNamespace>DLSSGManager</RootNamespace>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <!-- 刻意不使用 UseWPF：本测试工具是控制台程序，只用依赖 Windows 的注册表与 P/Invoke。
+         引入 WPF 会要求 CI 安装额外的桌面 SDK 组件，而这里并不需要。 -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
