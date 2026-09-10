@@ -74,6 +74,40 @@ public static class Gpu
         return "";
     }
 
+    /// <summary>
+    /// Maps an adapter name to the mod's route. Pure so it can be tested without the hardware.
+    /// </summary>
+    public static string RouteForAdapter(string adapterName)
+    {
+        if (string.IsNullOrWhiteSpace(adapterName)) return "SM86";
+
+        // Turing is the only family that needs the older route.
+        if (System.Text.RegularExpressions.Regex.IsMatch(adapterName, @"RTX\s*20\d0")) return "SM75";
+
+        return "SM86";
+    }
+
+    /// <summary>
+    /// Human-readable guidance for an adapter. Separated from probing so the wording can be checked
+    /// against any adapter name, not just the one in the current machine.
+    /// </summary>
+    public static string AdviceForAdapter(string adapterName, string driver)
+    {
+        var driverText = driver.Length > 0 ? $"驱动 {driver}" : "驱动版本未知";
+        var route = RouteForAdapter(adapterName);
+
+        if (System.Text.RegularExpressions.Regex.IsMatch(adapterName, @"RTX\s*50\d0|RTX\s*40\d0"))
+            return $"{driverText}。Ada/Blackwell 原生支持 DLSS 帧生成，通常不需要本 Mod。";
+
+        if (System.Text.RegularExpressions.Regex.IsMatch(adapterName, @"RTX\s*30\d0"))
+            return $"{driverText}。与本机匹配：SM86 路由即作者实卡验证的路径。";
+
+        if (route == "SM75")
+            return $"{driverText}。Turing 请用 SM75 路由；作者仅在 3080 Ti 上做过 PTX 前向检查。";
+
+        return $"{driverText}。未识别的型号，请自行确认路由。";
+    }
+
     public static GpuInfo Probe()
     {
         var adapters = AdapterNames();
@@ -91,26 +125,6 @@ public static class Gpu
         }
 
         var driver = DriverVersion(nvidia);
-        var driverText = driver.Length > 0 ? $"驱动 {driver}" : "驱动版本未知";
-
-        if (System.Text.RegularExpressions.Regex.IsMatch(nvidia, @"RTX\s*50\d0|RTX\s*40\d0"))
-        {
-            return new GpuInfo(nvidia, driver, "SM86",
-                $"{driverText}。Ada/Blackwell 原生支持 DLSS 帧生成，通常不需要本 Mod。");
-        }
-
-        if (System.Text.RegularExpressions.Regex.IsMatch(nvidia, @"RTX\s*30\d0"))
-        {
-            return new GpuInfo(nvidia, driver, "SM86",
-                $"{driverText}。与本机匹配：SM86 路由即作者实卡验证的路径。");
-        }
-
-        if (System.Text.RegularExpressions.Regex.IsMatch(nvidia, @"RTX\s*20\d0"))
-        {
-            return new GpuInfo(nvidia, driver, "SM75",
-                $"{driverText}。Turing 请用 SM75 路由；作者仅在 3080 Ti 上做过 PTX 前向检查。");
-        }
-
-        return new GpuInfo(nvidia, driver, "SM86", $"{driverText}。未识别的型号，请自行确认路由。");
+        return new GpuInfo(nvidia, driver, RouteForAdapter(nvidia), AdviceForAdapter(nvidia, driver));
     }
 }

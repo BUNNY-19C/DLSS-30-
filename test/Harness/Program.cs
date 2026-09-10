@@ -346,9 +346,47 @@ public static class Program
         Console.WriteLine($"      探测结果: {info.Name} | 路由 {info.Router} | 驱动 {info.Driver}");
         Console.WriteLine($"      建议: {info.Advice}");
 
-        Check("探测到 NVIDIA 显卡", info.Name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase), info.Name);
-        Check("3080 Ti 建议 SM86 路由", info.Router == "SM86", "实际: " + info.Router);
-        Check("读到驱动版本", info.Driver.Length > 0, "驱动为空");
+        // This ran on a specific machine once and asserted "an NVIDIA card must be present", which
+        // fails on any build agent (they have no discrete GPU). Probe behaviour is what matters, so
+        // the assertions are shaped around what was actually detected.
+        var hasNvidia = info.Name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase);
+
+        Check("探测有结果且未抛异常", !string.IsNullOrWhiteSpace(info.Name), info.Name);
+        Check("路由取值合法", info.Router is "SM86" or "SM75", info.Router);
+        Check("给出了说明文字", !string.IsNullOrWhiteSpace(info.Advice), "(空)");
+
+        if (hasNvidia)
+        {
+            Console.WriteLine("      （检测到 NVIDIA 显卡，校验路由映射）");
+            Check("读到驱动版本", info.Driver.Length > 0, "驱动为空");
+
+            if (info.Name.Contains("RTX 30", StringComparison.OrdinalIgnoreCase))
+                Check("RTX 30 系映射到 SM86", info.Router == "SM86", info.Router);
+            else if (info.Name.Contains("RTX 20", StringComparison.OrdinalIgnoreCase))
+                Check("RTX 20 系映射到 SM75", info.Router == "SM75", info.Router);
+        }
+        else
+        {
+            Console.WriteLine("      （无 NVIDIA 显卡，这是 CI 等虚拟环境的正常情况，跳过型号映射校验）");
+            Check("无 N 卡时给出可读提示", info.Advice.Length > 0, info.Advice);
+        }
+
+        // The mapping itself is pure logic and is verified regardless of the host's hardware.
+        Check("型号→路由：RTX 3080 Ti → SM86", Gpu.RouteForAdapter("NVIDIA GeForce RTX 3080 Ti") == "SM86");
+        Check("型号→路由：RTX 2080 → SM75", Gpu.RouteForAdapter("NVIDIA GeForce RTX 2080") == "SM75");
+        Check("型号→路由：RTX 2080 Ti → SM75", Gpu.RouteForAdapter("NVIDIA GeForce RTX 2080 Ti") == "SM75");
+        Check("型号→路由：RTX 4090 → SM86", Gpu.RouteForAdapter("NVIDIA GeForce RTX 4090") == "SM86");
+        Check("型号→路由：RTX 5090 → SM86", Gpu.RouteForAdapter("NVIDIA GeForce RTX 5090") == "SM86");
+        Check("型号→路由：未知型号回落 SM86", Gpu.RouteForAdapter("Some Unknown Adapter") == "SM86");
+        Check("型号→路由：空值不抛异常", Gpu.RouteForAdapter("") == "SM86");
+
+        // Wording must stay useful for the families that need special handling.
+        Check("RTX 40 系提示无需本 Mod",
+            Gpu.AdviceForAdapter("NVIDIA GeForce RTX 4070", "1.2.3").Contains("不需要"));
+        Check("RTX 20 系提示 SM75 路由",
+            Gpu.AdviceForAdapter("NVIDIA GeForce RTX 2060", "1.2.3").Contains("SM75"));
+        Check("无驱动版本时措辞得体",
+            Gpu.AdviceForAdapter("NVIDIA GeForce RTX 3080", "").Contains("未知"));
     }
 
     private static void TestDeployRestore(string modRoot, string work)
