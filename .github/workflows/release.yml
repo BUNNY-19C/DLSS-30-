@@ -1,0 +1,102 @@
+name: Release
+
+# 推送 v* 标签时自动构建并发布可执行文件，也可以在 Actions 页面手动触发。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: 构建并测试
+        run: |
+          dotnet build -c Release --nologo
+          # 未获取 Mod 文件时，依赖它们的用例会自动跳过；其余用例必须全绿。
+          ./test/Harness/bin/Release/net8.0-windows/Harness.exe
+
+      - name: 发布单文件 exe
+        shell: pwsh
+        run: |
+          # 标签形如 v1.2.3 时把版本号写进 exe，手动触发则用 csproj 里的版本。
+          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $env:GITHUB_REF -replace '^refs/tags/v', ''
+          } else { '' }
+
+          $args = @(
+            'src/DLSSGManager/DLSSGManager.csproj',
+            '-c', 'Release',
+            '-r', 'win-x64',
+            '--self-contained', 'true',
+            '-p:PublishSingleFile=true',
+            '-p:IncludeNativeLibrariesForSelfExtract=true',
+            '-p:EnableCompressionInSingleFile=true',
+            '-p:DebugType=none',
+            '-o', 'publish',
+            '--nologo'
+          )
+          if ($version) { $args += "-p:Version=$version" }
+
+          # 自包含：目标机器无需安装 .NET 运行时，双击即可用。
+          dotnet publish @args
+
+      - name: 生成校验值
+        shell: pwsh
+        run: |
+          $exe = "publish/DLSSGManager.exe"
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          "$hash  DLSSGManager.exe" | Out-File -Encoding ascii publish/DLSSGManager.exe.sha256
+          "SHA256: $hash"
+          "大小: {0:N1} MB" -f ((Get-Item $exe).Length / 1MB)
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: DLSSGManager-win-x64
+          path: |
+            publish/DLSSGManager.exe
+            publish/DLSSGManager.exe.sha256
+
+      - name: 创建 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            publish/DLSSGManager.exe
+            publish/DLSSGManager.exe.sha256
+          body: |
+            ## 使用方法
+
+            1. 下载下面的 `DLSSGManager.exe`，放到任意目录（**不需要安装 .NET**）。
+            2. 双击运行。首次启动会提示获取 Mod 文件（约 75 MB），选「是」即可。
+            3. 点「扫描 Steam 库」或「添加游戏…」，选中游戏，点「部署到该游戏」。
+
+            想撤销就点「一键恢复」。程序只删除经签名和哈希确认属于本项目的文件。
+
+            ## 注意
+
+            - **带内核级反作弊的游戏不能用**（会让 Mod 失效并有账号风险）。程序会自动检测并禁止部署。
+             已确认的例子：绝区零（米哈游 HoYoKProtect）、战争雷霆（BattlEye）、终末地（腾讯 ACE）、
+             守望先锋（网易 NEAC）。
+            - 需要 RTX 30 系（SM86）。RTX 20 系可改用 SM75 路由；RTX 40/50 系原生支持帧生成，不需要本工具。
+            - 杀软可能误报——这类 DLL 代理行为容易被启发式检测盯上。
+            - 本程序只是 dlssg_for_sm86 的部署工具，不含也不修改 Mod 本身。
+
+            ## 校验
+
+            下载后可核对 `DLSSGManager.exe.sha256`：
+
+            ```powershell
+            Get-FileHash DLSSGManager.exe -Algorithm SHA256
+            ```

@@ -59,6 +59,37 @@ public partial class MainWindow : Window
             _log.Write("提示：游戏若装在 Program Files 下，写入需要管理员权限，可用右上角按钮重启。");
 
         ProbeGpuInBackground();
+
+        // A freshly downloaded exe has no mod files yet, and the download button is easy to miss.
+        // Offer the download up front so "download and run" is the whole setup.
+        if (!HasModSource) OfferFirstRunDownload();
+    }
+
+    /// <summary>
+    /// Asks, once, whether to fetch the mod files now. Declining leaves the app usable — the status
+    /// banner keeps pointing at the button.
+    /// </summary>
+    private void OfferFirstRunDownload()
+    {
+        var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
+
+        var body =
+            "本程序需要 dlssg_for_sm86 的文件（约 75 MB）才能部署到游戏，当前还没有获取。\n\n" +
+            "是否现在从 GitHub 下载？下载源限定为 github.com / codeload.github.com（HTTPS）。\n\n" +
+            "将写入：\n" + target + "\n\n" +
+            "也可以稍后点工具条上的「从 GitHub 更新 Mod 文件」，或手动放置，详见 docs/mod-files.md。";
+
+        var answer = MessageBox.Show(this, body, "首次运行：获取 Mod 文件",
+            MessageBoxButton.YesNo, MessageBoxImage.Information, MessageBoxResult.Yes);
+
+        if (answer == MessageBoxResult.Yes)
+        {
+            DownloadModFiles(target, update: false);
+        }
+        else
+        {
+            _log.Write("已跳过自动下载。需要时点「从 GitHub 更新 Mod 文件」获取。");
+        }
     }
 
     private void ProbeGpuInBackground()
@@ -126,14 +157,25 @@ public partial class MainWindow : Window
         if (_busy) { _log.Write("有操作正在进行，请稍候。"); return; }
 
         var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
-        var answer = MessageBox.Show(
+        var answer = MessageBox.Show(this,
             "将从 GitHub 下载 dlssg_for_sm86 的最新源码包，解压并写入 Mod 文件目录：\n\n" +
             target + "\n\n下载源限定为 github.com / codeload.github.com（HTTPS）。继续吗？",
             "更新 Mod 文件", MessageBoxButton.OKCancel, MessageBoxImage.Information);
         if (answer != MessageBoxResult.OK) return;
 
+        DownloadModFiles(target, update: true);
+    }
+
+    /// <summary>
+    /// Downloads the mod files into <paramref name="target"/>. Shared by the toolbar button and the
+    /// first-run prompt so both behave identically.
+    /// </summary>
+    private void DownloadModFiles(string target, bool update)
+    {
+        if (_busy) { _log.Write("有操作正在进行，请稍候。"); return; }
+
         _busy = true;
-        _log.Write("— 从 GitHub 更新 Mod 文件");
+        _log.Write(update ? "— 从 GitHub 更新 Mod 文件" : "— 首次获取 Mod 文件");
 
         var progress = UiProgress();
 
@@ -150,9 +192,12 @@ public partial class MainWindow : Window
                 RefreshModSource();
                 if (result.Ok)
                 {
-                    MessageBox.Show(
-                        result.Message + "\n\n如果 Mod 有新的配置项，可在各游戏的配置面板里重新部署以写入。",
-                        "更新完成", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(this,
+                        result.Message + (update
+                            ? "\n\n如果 Mod 有新的配置项，可在各游戏的配置面板里重新部署以写入。"
+                            : "\n\n接下来点「扫描 Steam 库」或「添加游戏…」就能开始部署了。"),
+                        update ? "更新完成" : "获取完成",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }, TaskScheduler.FromCurrentSynchronizationContext());
     }

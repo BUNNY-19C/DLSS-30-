@@ -15,17 +15,11 @@
 
 ---
 
-## 开始之前
+## 直接用（推荐）
 
-本仓库**不含** mod 的二进制文件（约 75 MB，且授权不允许转发，原因见 [docs/mod-files.md](docs/mod-files.md)）。
+到 [**Releases**](../../releases/latest) 下载 `DLSSGManager.exe`，双击即可。**不需要安装 .NET 或任何运行环境**——单文件自包含，约 63 MB。
 
-首次运行后，点工具条上的「**从 GitHub 更新 Mod 文件**」，程序会自动下载并放到正确位置。也可以手动放置，详见 [docs/mod-files.md](docs/mod-files.md)。
-
----
-
-## 快速开始
-
-双击 `DLSSGManager.exe`。
+首次启动会问你要不要获取 Mod 文件（约 75 MB），选「是」等它下载完就能用。
 
 1. **扫描游戏** —— 点「扫描 Steam 库」，或用「扫描文件夹…」选某个游戏盘，也可以点「添加游戏…」直接指定单个游戏目录。
    程序靠 `nvngx_dlssg.dll` 定位游戏：游戏必须自带这个文件才支持 DLSS 帧生成，所以列表里不会出现无关的程序。Steam 库会自动读注册表和 `libraryfolders.vdf`，包含所有自定义库路径。
@@ -34,6 +28,20 @@
 3. **点「部署到该游戏」** —— 完成。mod 文件被复制进渲染目录。
 
 要撤销就点「一键恢复」。批量操作在窗口底部：「全部部署」/「全部恢复」。
+
+下载后可以核对哈希，发布页附有 `DLSSGManager.exe.sha256`：
+
+```powershell
+Get-FileHash DLSSGManager.exe -Algorithm SHA256
+```
+
+---
+
+## 从源码运行
+
+本仓库**不含** mod 的二进制文件（约 75 MB，且授权不允许转发，原因见 [docs/mod-files.md](docs/mod-files.md)）。
+
+需要 .NET 8 SDK，构建步骤见下方[从源码构建](#从源码构建)。构建后首次运行同样会提示获取 Mod 文件。
 
 ---
 
@@ -185,15 +193,25 @@ DLSSGManager/
 需要 .NET 8 SDK。
 
 ```bash
-cd src/DLSSGManager
+git clone <仓库地址>
+cd DLSSGManager
 dotnet build -c Release
 
-# 打包成单文件 exe
-dotnet publish -c Release -r win-x64 --self-contained false \
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ../../dist
+# 打包成单文件 exe（自包含，目标机器无需装 .NET）
+dotnet publish src/DLSSGManager/DLSSGManager.csproj \
+  -c Release -r win-x64 --self-contained true \
+  -p:PublishSingleFile=true \
+  -p:IncludeNativeLibrariesForSelfExtract=true \
+  -p:EnableCompressionInSingleFile=true \
+  -p:DebugType=none \
+  -o dist
 ```
 
-运行后点「从 GitHub 更新 Mod 文件」获取 mod 二进制，或按 [docs/mod-files.md](docs/mod-files.md) 手动放置。若要把整个目录拷给别人用，把 `mod/` 一起带上即可。
+`dist/DLSSGManager.exe` 约 63 MB，可直接拷给别人用。
+
+如果只想在本机快速跑，把 `--self-contained true` 换成 `false`，产物约 260 KB，但目标机器需要 .NET 8 运行时。
+
+发布成品由 GitHub Actions 自动构建：推送 `v*` 标签（如 `git tag v1.0.0 && git push origin v1.0.0`）会构建、测试并创建 Release，附上 exe 与 SHA256。也可以在 Actions 页面手动触发。
 
 测试（153 项，覆盖部署/恢复/备份保护/反作弊识别与拦截/目录解析/接管/INI 渲染/持久化/下载 URL 策略）：
 
