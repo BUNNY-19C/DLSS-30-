@@ -43,6 +43,11 @@ AppSupportURL={#AppUrl}/issues
 AppUpdatesURL={#AppUrl}/releases
 DefaultDirName={autopf}\{#AppShortName}
 DefaultGroupName={#AppName}
+; 升级安装时 Inno 的默认行为（DisableDirPage=auto）是跳过目录选择页、沿用上次
+; 的路径，避免装出两份。但用户明确希望能改路径，所以强制显示该页。
+; UsePreviousAppDir 保持默认的 yes：页面会预填上次的位置，仍可修改。
+DisableDirPage=no
+UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE
 OutputDir=..\dist
