@@ -1,0 +1,24 @@
+# 构建产物
+[Bb]in/
+[Oo]bj/
+/dist/
+
+# Mod 文件源：第三方版权作品，不随本仓库分发。
+#
+# 这些是 dlssg_for_sm86 发布的二进制，其 THIRD_PARTY_NOTICES.txt 说明 NVIDIA 运行时与
+# 提取的内核资源不属于该项目的授权范围（"not relicensed by LICENSE.md"），因此本仓库
+# 不转发。程序首次运行时会从上游下载，见 docs/mod-files.md。
+/mod/
+
+# 用户本地数据
+*.user
+*.suo
+.vs/
+
+# 工具生成的本地状态（安全扫描审计记录等）
+.mimosa/
+
+# 临时文件
+/_dl/
+*.tmp
+*.log

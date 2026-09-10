@@ -1,0 +1,862 @@
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace DLSSGManager;
+
+/// <summary>
+/// Exercises the deployment engine against throwaway folders that mimic real game directories.
+/// Nothing here touches a real game; it only uses the shipped DLL bytes to make the signature and
+/// hash checks behave exactly as they would in production.
+/// </summary>
+public static class Program
+{
+    private static int _pass;
+    private static int _fail;
+    private static int _skipped;
+    private static bool _hasModFiles;
+
+    public static int Main(string[] args)
+    {
+        Console.OutputEncoding = Encoding.UTF8;
+
+        var work = Path.Combine(Path.GetTempPath(), "dlssg_harness_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(work);
+
+        // Point the app's data folder at our scratch directory *before* anything reads it, so test
+        // fixtures and download noise never land in the user's real library or log. Setting an
+        // environment variable works because AppPaths resolves Root lazily on first use.
+        Environment.SetEnvironmentVariable(AppPaths.RootOverrideVariable, Path.Combine(work, "appdata"));
+
+        // Read-only mode used to check detection against this machine's real game folders.
+        if (args.Length > 0 && args[0] == "--scan")
+            return RealScan(args.Skip(1).ToArray());
+
+        // Exercises the built-in downloader, proving a fresh clone can obtain the mod files.
+        if (args.Length > 0 && args[0] == "--fetch")
+            return Fetch(args.Length > 1 ? args[1] : null);
+
+        // Locate the mod folder the same way the app does, so the suite works both from a checkout and
+        // from a copied build.
+        var modRoot = ModSourceLocator.FindExisting(null)
+                      ?? ModSourceLocator.ResolveTarget(null);
+
+        _hasModFiles = ModSourceLocator.LooksLikeSource(modRoot);
+
+        Console.WriteLine("Mod 源目录: " + modRoot + (_hasModFiles ? "" : "   ← 尚未获取"));
+        Console.WriteLine("测试工作区: " + work);
+        Console.WriteLine();
+
+        if (!_hasModFiles)
+        {
+            Console.WriteLine("注意：Mod 文件尚未获取，依赖这些文件的用例将跳过。");
+            Console.WriteLine("      运行  Harness.exe --fetch  可自动下载，或见 docs/mod-files.md。");
+            Console.WriteLine();
+        }
+
+        try
+        {
+            TestModSource(modRoot);
+            TestIniRendering(modRoot);
+            TestGpuProbe();
+            TestDeployRestore(modRoot, work);
+            TestForeignFileProtection(modRoot, work);
+            TestProxyOccupation(modRoot, work);
+            TestAdopt(modRoot, work);
+            TestDetection(modRoot, work);
+            TestModSourceLocator(modRoot, work);
+            TestAntiCheat(modRoot, work);
+            TestPersistence(work);
+            TestUrlPolicy();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("测试框架异常: " + ex);
+            _fail++;
+        }
+        finally
+        {
+            try { Directory.Delete(work, true); } catch { }
+        }
+
+        Console.WriteLine();
+        var skipped = _skipped > 0 ? $" · 跳过 {_skipped}" : "";
+        Console.WriteLine($"===== 通过 {_pass} · 失败 {_fail}{skipped} =====");
+        if (_skipped > 0)
+            Console.WriteLine($"（跳过的 {_skipped} 项需要 Mod 文件，运行 Harness.exe --fetch 获取后重试）");
+        return _fail == 0 ? 0 : 1;
+    }
+
+    // ---- built-in downloader ------------------------------------------------
+
+    /// <summary>
+    /// Runs the same download path the app's "从 GitHub 更新 Mod 文件" button uses, into a scratch
+    /// folder (or the given destination), then reports whether the result is a usable mod source.
+    /// This is what makes shipping without the 75 MB of third-party binaries safe: a fresh clone can
+    /// obtain them on demand.
+    /// </summary>
+    private static int Fetch(string? destination)
+    {
+        var target = destination ?? Path.Combine(Path.GetTempPath(), "dlssg_fetch_" + Guid.NewGuid().ToString("N")[..8]);
+        Console.WriteLine($"目标目录: {target}");
+        Console.WriteLine();
+
+        var progress = new Progress<string>(text => Console.WriteLine("  " + text));
+        var result = ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None)
+            .GetAwaiter().GetResult();
+
+        foreach (var line in result.Lines) Console.WriteLine("  " + line);
+
+        var source = new ModSource(target);
+        Console.WriteLine();
+        Console.WriteLine($"结果: {(result.Ok ? "成功" : "失败")} — {result.Message}");
+        Console.WriteLine($"源有效性: {source.IsValid}" + (source.IsValid ? $" · 版本 {source.Version}" : $" · {source.ValidationMessage}"));
+        Console.WriteLine($"代理入口: {(source.Proxies.Count == 0 ? "(无)" : string.Join("、", source.Proxies))}");
+
+        var ok = result.Ok && source.IsValid && source.Proxies.Count == 5;
+
+        if (destination is null)
+        {
+            try { Directory.Delete(target, true); } catch { }
+            Console.WriteLine("（临时目录已清理）");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine(ok ? "===== 下载器验证通过 =====" : "===== 下载器验证失败 =====");
+        return ok ? 0 : 1;
+    }
+
+    // ---- read-only real-machine scan ---------------------------------------
+
+    private static int RealScan(string[] roots)
+    {
+        Console.WriteLine("===== Steam 库 =====");
+        foreach (var lib in Detection.SteamLibraries()) Console.WriteLine("  " + lib);
+
+        Console.WriteLine();
+        Console.WriteLine("===== Steam 扫描 =====");
+        var steam = Detection.ScanSteam(new Progress<string>(s => Console.WriteLine("  检查 " + s)));
+        Console.WriteLine($"  → 命中 {steam.Count} 个");
+        foreach (var g in steam)
+            Console.WriteLine($"    · {g.Name}\n        渲染目录 {g.RenderDir}\n        主程序   {g.ExePath}");
+
+        if (roots.Length > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("===== 指定目录扫描 =====");
+            foreach (var root in roots)
+            {
+                Console.WriteLine("  " + root);
+                if (!Directory.Exists(root)) { Console.WriteLine("    (不存在)"); continue; }
+
+                // Show what the folder resolves to, since that is where both the proxy and the
+                // anti-cheat scan operate.
+                var (resolved, resolvedExe) = Detection.ResolveRenderDir(root);
+                if (!string.Equals(Path.GetFullPath(resolved), Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase))
+                    Console.WriteLine($"    解析到   {resolved}");
+
+                var direct = AntiCheat.Scan(root);
+                var afterResolve = AntiCheat.Scan(resolved);
+                Console.WriteLine($"    反作弊   {afterResolve.Summary}"
+                                  + (afterResolve.IsProtected ? $"  [证据: {afterResolve.Evidence}]" : ""));
+                if (afterResolve.HasKernelAntiCheat != direct.HasKernelAntiCheat)
+                    Console.WriteLine($"    （若不先解析会漏判：直接扫该目录得到「{direct.Summary}」）");
+                if (resolvedExe is not null) Console.WriteLine($"    主程序   {resolvedExe}");
+
+                var hits = Detection.ScanFolder(root);
+                foreach (var g in hits)
+                {
+                    Console.WriteLine($"    · {g.Name}\n        渲染目录 {g.RenderDir}\n        主程序   {g.ExePath}");
+
+                    var quarantined = AntiCheat.FindQuarantinedCopies(g.RenderDir, "version.dll", null);
+                    if (quarantined.Count > 0)
+                        Console.WriteLine($"        隔离残留 {quarantined.Count} 个");
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    // ---- helpers ------------------------------------------------------------
+
+    private static void Check(string name, bool condition, string? detail = null)
+    {
+        if (condition)
+        {
+            _pass++;
+            Console.WriteLine($"  [通过] {name}");
+        }
+        else
+        {
+            _fail++;
+            Console.WriteLine($"  [失败] {name}" + (detail is null ? "" : $"  → {detail}"));
+        }
+    }
+
+    /// <summary>
+    /// Marks a case as skipped when the mod files have not been fetched yet, so a fresh clone gets a
+    /// meaningful run instead of a wall of failures. Returns true when the caller should return early.
+    /// </summary>
+    private static bool SkipWithoutModFiles(string section)
+    {
+        if (_hasModFiles) return false;
+
+        _skipped++;
+        Console.WriteLine($"  [跳过] {section}（需要 Mod 文件，尚未获取）");
+        return true;
+    }
+
+    private static void Section(string title)
+    {
+        Console.WriteLine();
+        Console.WriteLine("== " + title + " ==");
+    }
+
+    /// <summary>
+    /// A stand-in mod source with the right shape but tiny files. Lets tests that only care about the
+    /// deployment gate (anti-cheat, proxy occupation) run without the real 75 MB download — and, more
+    /// importantly, keeps them from passing for the wrong reason when the real files are absent.
+    /// </summary>
+    private static string MakeSyntheticModSource(string work)
+    {
+        var root = Path.Combine(work, "SyntheticSource");
+        Directory.CreateDirectory(Path.Combine(root, "altnative"));
+        Directory.CreateDirectory(Path.Combine(root, "config", "presets"));
+
+        File.WriteAllText(Path.Combine(root, ModSource.IniName),
+            "; Native 0.2.3. Synthetic source for tests.\r\n[Compatibility]\r\nRouter=SM86\r\nKernelImage=PTX\r\nHardwareBilinear=0\r\n\r\n[FrameGeneration]\r\nMaxGeneratedFrames=3\r\n\r\n[Logging]\r\nLevel=1\r\n");
+
+        foreach (var name in ModSource.ProxyCandidates)
+        {
+            var path = ModSource.ResolveDllPath(root, name);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            // Not a valid PE and not project-signed — enough for the gate, which never inspects the
+            // incoming file's signature (only files already present in the game folder).
+            File.WriteAllBytes(path, RandomNumberGenerator.GetBytes(1024));
+        }
+
+        return root;
+    }
+
+    private static string Sha(string path)
+    {
+        using var s = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(s));
+    }
+
+    /// <summary>Builds a fake game folder: a large exe plus the marker DLL a real game would ship.</summary>
+    private static string MakeGameDir(string work, string name, bool withMarker = true)
+    {
+        var dir = Path.Combine(work, name);
+        Directory.CreateDirectory(dir);
+        File.WriteAllBytes(Path.Combine(dir, name + ".exe"), RandomNumberGenerator.GetBytes(4096));
+
+        if (withMarker)
+        {
+            var marker = Path.Combine(dir, "nvngx_dlssg.dll");
+            if (!File.Exists(marker)) File.WriteAllBytes(marker, RandomNumberGenerator.GetBytes(2048));
+        }
+
+        return dir;
+    }
+
+    // ---- tests --------------------------------------------------------------
+
+    private static void TestModSource(string modRoot)
+    {
+        Section("Mod 文件源识别");
+        if (SkipWithoutModFiles("Mod 文件源识别")) return;
+
+        var source = new ModSource(modRoot);
+        Check("源目录有效", source.IsValid, source.ValidationMessage);
+        Check("版本号解析为 0.2.3", source.Version == "0.2.3", "实际: " + source.Version);
+        Check("五个代理入口全部识别", source.Proxies.Count == 5,
+            "实际: " + string.Join(",", source.Proxies));
+        Check("version.dll 在根目录", File.Exists(Path.Combine(modRoot, "version.dll")));
+        Check("altnative 四个备用入口齐全",
+            ModSource.ProxyCandidates.Skip(1).All(n => File.Exists(Path.Combine(modRoot, "altnative", n))));
+        Check("两档预设齐全",
+            source.PresetPath("sm86-default") is not null && source.PresetPath("sm86-performance") is not null);
+
+        var bad = new ModSource(Path.Combine(modRoot, "does_not_exist"));
+        Check("不存在的目录判为无效", !bad.IsValid);
+    }
+
+    private static void TestIniRendering(string modRoot)
+    {
+        Section("INI 渲染");
+        if (SkipWithoutModFiles("INI 渲染")) return;
+
+        var template = File.ReadAllText(Path.Combine(modRoot, "dlssg_sm86.ini"), Encoding.UTF8);
+
+        var profile = new GameProfile { Router = "SM75", KernelImage = "Cubin", HardwareBilinear = true, MaxGeneratedFrames = 2, LogLevel = 3 };
+        var rendered = IniTemplate.Render(template, profile);
+
+        Check("Router 已写入", rendered.Contains("Router=SM75"), rendered);
+        Check("KernelImage 已写入", rendered.Contains("KernelImage=Cubin"));
+        Check("HardwareBilinear 已写入", rendered.Contains("HardwareBilinear=1"));
+        Check("MaxGeneratedFrames 已写入", rendered.Contains("MaxGeneratedFrames=2"));
+        Check("Level 已写入", rendered.Contains("Level=3"));
+        Check("未重复写入键", rendered.Split("Router=").Length == 2, "Router= 出现次数异常");
+        Check("保留原有注释", rendered.Contains("SM86 for Ampere"));
+
+        var withDiag = IniTemplate.Render(template, new GameProfile { Diagnostics = true });
+        Check("诊断段按需添加", withDiag.Contains("[Diagnostics]"));
+
+        var noDiag = IniTemplate.Render(template, new GameProfile());
+        Check("默认不含诊断段", !noDiag.Contains("[Diagnostics]"));
+
+        // A user-added diagnostic key inside an existing section must survive a re-render.
+        var custom = template + "\r\n[Diagnostics]\r\nPerformance=1\r\n";
+        var rerendered = IniTemplate.Render(custom, new GameProfile { LogLevel = 2 });
+        Check("用户自定义段保留", rerendered.Contains("Performance=1"));
+        Check("重渲染更新 Level", rerendered.Contains("Level=2"));
+
+        // Range clamping keeps a corrupt library file from producing an unreadable INI.
+        var clamped = IniTemplate.Render(template, new GameProfile { MaxGeneratedFrames = 99, LogLevel = -5 });
+        Check("倍率上限被夹取到 3", clamped.Contains("MaxGeneratedFrames=3"));
+        Check("日志级别被夹取到 0", clamped.Contains("Level=0"));
+    }
+
+    private static void TestGpuProbe()
+    {
+        Section("显卡探测");
+
+        var info = Gpu.Probe();
+        Console.WriteLine($"      探测结果: {info.Name} | 路由 {info.Router} | 驱动 {info.Driver}");
+        Console.WriteLine($"      建议: {info.Advice}");
+
+        Check("探测到 NVIDIA 显卡", info.Name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase), info.Name);
+        Check("3080 Ti 建议 SM86 路由", info.Router == "SM86", "实际: " + info.Router);
+        Check("读到驱动版本", info.Driver.Length > 0, "驱动为空");
+    }
+
+    private static void TestDeployRestore(string modRoot, string work)
+    {
+        Section("部署 → 恢复（干净目录）");
+        if (SkipWithoutModFiles("部署 → 恢复")) return;
+
+        var dir = MakeGameDir(work, "GameClean");
+        var source = new ModSource(modRoot);
+        var game = new GameEntry
+        {
+            Name = "GameClean",
+            RenderDir = dir,
+            PreferredProxy = DeploymentService.AutoProxy,
+            Profile = new GameProfile { Router = "SM86", MaxGeneratedFrames = 3, LogLevel = 1 },
+        };
+
+        var deploy = DeploymentService.Deploy(game, source);
+        Check("部署成功", deploy.Ok, deploy.Message);
+        Check("写入 version.dll", File.Exists(Path.Combine(dir, "version.dll")));
+        Check("写入 dlssg_sm86.ini", File.Exists(Path.Combine(dir, ModSource.IniName)));
+        Check("记录已建立", game.Deployment is not null);
+        Check("记录的入口名正确", game.Deployment?.ProxyName == "version.dll", game.Deployment?.ProxyName);
+        Check("记录版本号", game.Deployment?.ModVersion == "0.2.3", game.Deployment?.ModVersion);
+        Check("DLL 已带项目签名", DeploymentService.IsProjectSigned(Path.Combine(dir, "version.dll")));
+        Check("部署的 DLL 与源文件一致",
+            Sha(Path.Combine(dir, "version.dll")) == Sha(Path.Combine(modRoot, "version.dll")));
+        Check("INI 内容符合配置",
+            File.ReadAllText(Path.Combine(dir, ModSource.IniName)).Contains("MaxGeneratedFrames=3"));
+
+        DeploymentService.Check(game);
+        Check("状态判定为已部署", game.Status == GameStatus.Deployed, game.StatusText + " / " + game.StatusDetail);
+
+        // Tampering with the INI should be reported, not silently ignored.
+        File.AppendAllText(Path.Combine(dir, ModSource.IniName), "\r\n; user edit\r\n");
+        DeploymentService.Check(game);
+        Check("INI 被改动后状态变为已改动", game.Status == GameStatus.Modified, game.StatusText);
+
+        var restore = DeploymentService.Restore(game, removeLogs: false);
+        Check("恢复成功", restore.Ok, restore.Message);
+        Check("version.dll 已移除", !File.Exists(Path.Combine(dir, "version.dll")));
+        Check("INI 已移除", !File.Exists(Path.Combine(dir, ModSource.IniName)));
+        Check("原游戏 exe 未受影响", File.Exists(Path.Combine(dir, "GameClean.exe")));
+        Check("marker DLL 未受影响", File.Exists(Path.Combine(dir, "nvngx_dlssg.dll")));
+        Check("部署记录已清除", game.Deployment is null);
+
+        DeploymentService.Check(game);
+        Check("恢复后状态为未部署", game.Status == GameStatus.NotDeployed, game.StatusText);
+    }
+
+    private static void TestForeignFileProtection(string modRoot, string work)
+    {
+        Section("保护其他 Mod 的文件（不得误删）");
+        if (SkipWithoutModFiles("保护其他 Mod 的文件")) return;
+
+        var dir = MakeGameDir(work, "GameForeign");
+        var source = new ModSource(modRoot);
+
+        // Another mod occupies dxgi.dll and the INI slot already holds an unrelated config.
+        var foreignDxgi = Path.Combine(dir, "dxgi.dll");
+        File.WriteAllBytes(foreignDxgi, RandomNumberGenerator.GetBytes(3072));
+        var foreignIni = Path.Combine(dir, ModSource.IniName);
+        File.WriteAllText(foreignIni, "; somebody else's config\n[Other]\r\nKey=1\r\n");
+        var foreignDxgiHash = Sha(foreignDxgi);
+        var foreignIniHash = Sha(foreignIni);
+
+        var game = new GameEntry
+        {
+            Name = "GameForeign",
+            RenderDir = dir,
+            PreferredProxy = DeploymentService.AutoProxy,
+            Profile = new GameProfile(),
+        };
+
+        var deploy = DeploymentService.Deploy(game, source);
+        Check("自动避开被占用的 dxgi.dll", deploy.Ok && game.Deployment?.ProxyName != "dxgi.dll",
+            "实际入口: " + game.Deployment?.ProxyName);
+        Check("其他 Mod 的 dxgi.dll 未被覆盖", Sha(foreignDxgi) == foreignDxgiHash);
+        Check("其他 Mod 的 dxgi.dll 未被删除", File.Exists(foreignDxgi));
+
+        var restoreResult = DeploymentService.Restore(game, removeLogs: false);
+        Check("恢复成功（含还原）", restoreResult.Ok, restoreResult.Message);
+        Check("其他 Mod 的 dxgi.dll 仍在", File.Exists(foreignDxgi));
+        Check("其他 Mod 的 dxgi.dll 内容未变", Sha(foreignDxgi) == foreignDxgiHash);
+        Check("原来的 INI 未被当作本项目的删除", File.Exists(foreignIni), "INI 被误删");
+        Check("原来的 INI 内容未变", Sha(foreignIni) == foreignIniHash);
+    }
+
+    private static void TestProxyOccupation(string modRoot, string work)
+    {
+        Section("五个入口名全被占用");
+
+        var dir = MakeGameDir(work, "GameBlocked");
+        foreach (var name in ModSource.ProxyCandidates)
+            File.WriteAllBytes(Path.Combine(dir, name), RandomNumberGenerator.GetBytes(1024));
+
+        var hashes = ModSource.ProxyCandidates.ToDictionary(n => n, n => Sha(Path.Combine(dir, n)));
+
+        var game = new GameEntry { Name = "GameBlocked", RenderDir = dir, PreferredProxy = DeploymentService.AutoProxy };
+        var result = DeploymentService.Deploy(game, new ModSource(MakeSyntheticModSource(work)));
+
+        Check("部署被拒绝而不是覆盖", !result.Ok, "居然成功了");
+        Check("给出了解决提示", result.Message.Contains("占用"), result.Message);
+        Check("所有占用文件保持原样",
+            ModSource.ProxyCandidates.All(n => Sha(Path.Combine(dir, n)) == hashes[n]));
+    }
+
+    private static void TestAdopt(string modRoot, string work)
+    {
+        Section("接管手工安装");
+        if (SkipWithoutModFiles("接管手工安装")) return;
+
+        var dir = MakeGameDir(work, "GameManual");
+        var source = new ModSource(modRoot);
+
+        // Simulate a user who copied the files in by hand.
+        File.Copy(Path.Combine(modRoot, "version.dll"), Path.Combine(dir, "version.dll"));
+        File.WriteAllText(Path.Combine(dir, ModSource.IniName),
+            File.ReadAllText(Path.Combine(modRoot, ModSource.IniName), Encoding.UTF8));
+
+        var game = new GameEntry { Name = "GameManual", RenderDir = dir };
+
+        DeploymentService.Check(game);
+        Check("未接管时报告未部署并提供接管提示",
+            game.Status == GameStatus.NotDeployed && game.StatusDetail.Contains("接管"), game.StatusDetail);
+
+        var adopt = DeploymentService.Adopt(game);
+        Check("接管成功", adopt.Ok, adopt.Message);
+        Check("接管后版本号从 INI 读出", game.Deployment?.ModVersion == "0.2.3", game.Deployment?.ModVersion);
+
+        DeploymentService.Check(game);
+        Check("接管后状态为已部署", game.Status == GameStatus.Deployed, game.StatusText + " / " + game.StatusDetail);
+
+        var restore = DeploymentService.Restore(game, removeLogs: false);
+        Check("接管后可恢复", restore.Ok && !File.Exists(Path.Combine(dir, "version.dll")), restore.Message);
+        Check("marker 与 exe 未受影响",
+            File.Exists(Path.Combine(dir, "nvngx_dlssg.dll")) && File.Exists(Path.Combine(dir, "GameManual.exe")));
+    }
+
+    private static void TestDetection(string modRoot, string work)
+    {
+        Section("游戏探测");
+
+        var root = Path.Combine(work, "Library");
+        var renderDir = Path.Combine(root, "SomeGame", "Binaries", "Win64");
+        Directory.CreateDirectory(renderDir);
+        File.WriteAllBytes(Path.Combine(renderDir, "SomeGame-Win64-Shipping.exe"), RandomNumberGenerator.GetBytes(8192));
+        File.WriteAllBytes(Path.Combine(renderDir, "nvngx_dlssg.dll"), RandomNumberGenerator.GetBytes(1024));
+
+        var hit = Detection.FindRenderTarget(root);
+        Check("从标记文件定位到渲染目录", hit is not null && 
+            string.Equals(Path.GetFullPath(hit.RenderDir), Path.GetFullPath(renderDir), StringComparison.OrdinalIgnoreCase),
+            hit?.RenderDir);
+        Check("选中 Shipping 主程序", hit?.ExePath.EndsWith("SomeGame-Win64-Shipping.exe") == true, hit?.ExePath);
+
+        var scan = Detection.ScanFolder(root);
+        Check("目录扫描找到候选", scan.Count == 1, "数量: " + scan.Count);
+
+        // A folder with no DLSS-G marker yields nothing, so unrelated folders are never listed.
+        var empty = Path.Combine(work, "NoMarker");
+        Directory.CreateDirectory(empty);
+        File.WriteAllBytes(Path.Combine(empty, "game.exe"), RandomNumberGenerator.GetBytes(512));
+        Check("无标记目录不产生候选", Detection.ScanFolder(empty).Count == 0);
+
+        var steamLibs = Detection.SteamLibraries().ToList();
+        Console.WriteLine("      检测到 Steam 库: " + (steamLibs.Count == 0 ? "(无)" : string.Join(" | ", steamLibs)));
+        Check("Steam 库枚举未抛异常", true);
+    }
+
+    private static void TestModSourceLocator(string modRoot, string work)
+    {
+        Section("Mod 文件源定位");
+
+        // A folder is only a source when the marker INI is present, so an empty or partial folder is
+        // not mistaken for a usable one. Uses a synthetic source so this holds with or without the
+        // real download.
+        var synthetic = MakeSyntheticModSource(work);
+        Check("完整目录被识别为文件源", ModSourceLocator.LooksLikeSource(synthetic), synthetic);
+        Check("Mod 文件已获取时真实目录也被识别",
+            !_hasModFiles || ModSourceLocator.LooksLikeSource(modRoot),
+            modRoot);
+
+        var empty = Path.Combine(work, "LocEmpty");
+        Directory.CreateDirectory(empty);
+        Check("空目录不被当作文件源", !ModSourceLocator.LooksLikeSource(empty));
+
+        var partial = Path.Combine(work, "LocPartial");
+        Directory.CreateDirectory(Path.Combine(partial, "altnative"));
+        File.WriteAllBytes(Path.Combine(partial, "version.dll"), RandomNumberGenerator.GetBytes(512));
+        Check("只有 DLL 没有 INI 时不算文件源", !ModSourceLocator.LooksLikeSource(partial));
+
+        Check("不存在的路径不算文件源", !ModSourceLocator.LooksLikeSource(Path.Combine(work, "LocNope")));
+        Check("空字符串不算文件源", !ModSourceLocator.LooksLikeSource(""));
+        Check("null 不算文件源", !ModSourceLocator.LooksLikeSource(null));
+
+        // A configured path that is usable must win over anything else.
+        var configured = Path.Combine(work, "LocConfigured");
+        Directory.CreateDirectory(configured);
+        File.WriteAllText(Path.Combine(configured, ModSource.IniName), "; test\n");
+        Check("已配置的可用路径优先",
+            string.Equals(ModSourceLocator.FindExisting(configured), configured, StringComparison.OrdinalIgnoreCase),
+            ModSourceLocator.FindExisting(configured));
+
+        // A configured path that no longer exists falls through instead of being returned blindly.
+        var gone = Path.Combine(work, "LocGone");
+        Check("失效的配置路径会被跳过",
+            ModSourceLocator.FindExisting(gone) != gone,
+            "返回了失效路径");
+
+        // Download target: an existing source is reused rather than creating a second copy.
+        Check("下载目标复用已有文件源",
+            string.Equals(ModSourceLocator.ResolveTarget(configured), configured, StringComparison.OrdinalIgnoreCase),
+            ModSourceLocator.ResolveTarget(configured));
+
+        // With nothing configured, the target must still be a real path we can create.
+        var fallback = ModSourceLocator.ResolveTarget(Path.Combine(work, "LocNeverExisted"));
+        Check("无可复用目录时给出可写目标", !string.IsNullOrWhiteSpace(fallback), fallback);
+
+        // A source checkout must download into <repo>\mod, not into its bin folder — otherwise a fresh
+        // clone ends up with the files somewhere the next build wipes.
+        var repoRoot = ModSourceLocator.FindRepositoryRoot();
+        Console.WriteLine("      识别到的仓库根: " + (repoRoot ?? "(无)"));
+        Check("能识别出仓库根目录", repoRoot is not null, "未找到");
+
+        if (repoRoot is not null)
+        {
+            var expected = Path.Combine(repoRoot, "mod");
+            Check("全新克隆时下载目标指向仓库根的 mod",
+                string.Equals(Path.GetFullPath(fallback), Path.GetFullPath(expected), StringComparison.OrdinalIgnoreCase),
+                fallback);
+            Check("下载目标不在 bin 目录内",
+                !fallback.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase),
+                fallback);
+        }
+
+        // An existing source is always preferred over deriving a fresh path. Only assertable once the
+        // files have actually been fetched.
+        var found = ModSourceLocator.FindExisting(null);
+        Console.WriteLine("      当前解析到的文件源: " + (found ?? "(无，尚未获取)"));
+        Check("Mod 文件已获取时能找到仓库的 mod 目录",
+            !_hasModFiles
+            || (found is not null && string.Equals(Path.GetFullPath(found), Path.GetFullPath(modRoot), StringComparison.OrdinalIgnoreCase)),
+            found ?? "(无)");
+    }
+
+    private static void TestAntiCheat(string modRoot, string work)
+    {
+        Section("反作弊检测与隔离清理");
+
+        // Uses a synthetic source: this section verifies the deployment gate, not the mod payload, and
+        // a synthetic source keeps the gate tests honest when the real files are absent.
+        var source = new ModSource(MakeSyntheticModSource(work));
+        Check("合成文件源有效（保证后续用例真实生效）", source.IsValid, source.ValidationMessage);
+
+        // --- a clean game must stay deployable ---
+        var clean = MakeGameDir(work, "AcClean");
+        var cleanReport = AntiCheat.Scan(clean);
+        Check("干净目录判定为无反作弊", !cleanReport.IsProtected, cleanReport.Summary);
+
+        var cleanGame = new GameEntry { Name = "AcClean", RenderDir = clean, PreferredProxy = DeploymentService.AutoProxy };
+        var cleanDeploy = DeploymentService.Deploy(cleanGame, source);
+        Check("干净游戏可正常部署", cleanDeploy.Ok, cleanDeploy.Message);
+
+        // --- HoYoKProtect reproduces the ZZZ situation ---
+        var hoyo = MakeGameDir(work, "AcHoyo");
+        File.WriteAllBytes(Path.Combine(hoyo, "HoYoKProtect.sys"), RandomNumberGenerator.GetBytes(4096));
+        File.WriteAllBytes(Path.Combine(hoyo, "mhypbase.dll"), RandomNumberGenerator.GetBytes(2048));
+
+        var report = AntiCheat.Scan(hoyo);
+        Check("识别出米哈游内核反作弊", report.HasKernelAntiCheat, report.Summary);
+        Check("报告产品名", report.Products.Contains("HoYoKProtect"), report.Products);
+        Check("报告证据文件名", report.Evidence.Contains("HoYoKProtect.sys"), report.Evidence);
+
+        var hoyoGame = new GameEntry { Name = "AcHoyo", RenderDir = hoyo, PreferredProxy = DeploymentService.AutoProxy };
+        var blocked = DeploymentService.Deploy(hoyoGame, source);
+        Check("默认拒绝部署到内核反作弊游戏", !blocked.Ok, "居然部署成功了");
+        Check("拒绝理由说明风险", blocked.Message.Contains("反作弊") && blocked.Message.Contains("账号"), blocked.Message);
+        Check("拒绝后未写入任何文件",
+            !File.Exists(Path.Combine(hoyo, "version.dll")) && !File.Exists(Path.Combine(hoyo, ModSource.IniName)));
+
+        // Explicit override still works, for a user who insists.
+        var overridden = DeploymentService.Deploy(hoyoGame, source, allowProtected: true);
+        Check("显式放行后可部署", overridden.Ok, overridden.Message);
+        Check("放行后文件已写入", File.Exists(Path.Combine(hoyo, "version.dll")));
+
+        // --- simulate the anti-cheat quarantining the proxy by renaming it ---
+        var proxyPath = Path.Combine(hoyo, "version.dll");
+        var recordedHash = hoyoGame.Deployment!.ProxySha256;
+        var renamed = Path.Combine(hoyo, "version.dll.3787982156");
+        File.Move(proxyPath, renamed);
+
+        var copies = AntiCheat.FindQuarantinedCopies(hoyo, "version.dll", recordedHash);
+        Check("识别出被隔离的副本", copies.Count == 1, "数量: " + copies.Count);
+        Check("副本路径正确", copies.FirstOrDefault()?.EndsWith("version.dll.3787982156") == true);
+
+        DeploymentService.Check(hoyoGame);
+        Check("状态识别为被隔离而非普通缺失",
+            hoyoGame.Status == GameStatus.Missing && hoyoGame.StatusDetail.Contains("隔离"),
+            hoyoGame.StatusText + " / " + hoyoGame.StatusDetail);
+
+        var restore = DeploymentService.Restore(hoyoGame, removeLogs: false);
+        Check("恢复成功", restore.Ok, restore.Message);
+        Check("被隔离副本已清理", !File.Exists(renamed));
+        Check("INI 已清理", !File.Exists(Path.Combine(hoyo, ModSource.IniName)));
+        Check("反作弊文件未被误删",
+            File.Exists(Path.Combine(hoyo, "HoYoKProtect.sys")) && File.Exists(Path.Combine(hoyo, "mhypbase.dll")));
+
+        // --- another tool's similarly named backup must survive ---
+        var foreign = Path.Combine(clean, "version.dll.mybackup");
+        File.WriteAllBytes(foreign, RandomNumberGenerator.GetBytes(1024));
+        var foreignHash = Sha(foreign);
+        var foreignCopies = AntiCheat.FindQuarantinedCopies(clean, "version.dll", null);
+        Check("非本项目的同名备份不被识别", foreignCopies.Count == 0, "误报: " + string.Join(",", foreignCopies));
+        Check("非本项目备份未被删除", File.Exists(foreign) && Sha(foreign) == foreignHash);
+
+        // --- one more vendor, to prove the table is not HoYo-specific ---
+        var eac = MakeGameDir(work, "AcEac");
+        File.WriteAllBytes(Path.Combine(eac, "EasyAntiCheat_EOS.sys"), RandomNumberGenerator.GetBytes(2048));
+        var eacReport = AntiCheat.Scan(eac);
+        Check("识别出 Easy Anti-Cheat", eacReport.HasKernelAntiCheat && eacReport.Products.Contains("Easy"),
+            eacReport.Summary);
+
+        // --- regression: Tencent ACE ships its payload in a plain folder, not as loose files ---
+        var ace = MakeGameDir(work, "AcAceDir");
+        var aceDir = Path.Combine(ace, "AntiCheatExpert");
+        Directory.CreateDirectory(aceDir);
+        File.WriteAllBytes(Path.Combine(aceDir, "ACE-BASE.sys"), RandomNumberGenerator.GetBytes(2048));
+        File.WriteAllBytes(Path.Combine(aceDir, "ACE-Service64.exe"), RandomNumberGenerator.GetBytes(1024));
+        var aceReport = AntiCheat.Scan(ace);
+        Check("识别出子目录形式的腾讯 ACE", aceReport.HasKernelAntiCheat, aceReport.Summary);
+        Check("ACE 报告目录名作为证据", aceReport.Evidence.Contains("AntiCheatExpert"), aceReport.Evidence);
+
+        var aceGame = new GameEntry { Name = "AcAceDir", RenderDir = ace, PreferredProxy = DeploymentService.AutoProxy };
+        Check("目录形式的 ACE 也拦截部署", !DeploymentService.Deploy(aceGame, source).Ok);
+
+        // --- regression: NetEase NEAC, which the first release missed ---
+        var neac = MakeGameDir(work, "AcNeac");
+        File.WriteAllBytes(Path.Combine(neac, "NeacSafe64.sys"), RandomNumberGenerator.GetBytes(2048));
+        File.WriteAllBytes(Path.Combine(neac, "NeacInterface.dll"), RandomNumberGenerator.GetBytes(1024));
+        File.WriteAllBytes(Path.Combine(neac, "NeacLoader.exe"), RandomNumberGenerator.GetBytes(512));
+        var neacReport = AntiCheat.Scan(neac);
+        Check("识别出网易 NEAC", neacReport.HasKernelAntiCheat && neacReport.Products.Contains("NEAC"),
+            neacReport.Summary);
+
+        var neacGame = new GameEntry { Name = "AcNeac", RenderDir = neac, PreferredProxy = DeploymentService.AutoProxy };
+        Check("NEAC 拦截部署", !DeploymentService.Deploy(neacGame, source).Ok);
+
+        // --- an unknown vendor's kernel driver is still caught by the generic rule ---
+        var unknown = MakeGameDir(work, "AcUnknownDriver");
+        File.WriteAllBytes(Path.Combine(unknown, "SomeGuard64.sys"), RandomNumberGenerator.GetBytes(4096));
+        var unknownReport = AntiCheat.Scan(unknown);
+        Check("未知厂商的内核驱动也被识别", unknownReport.HasKernelAntiCheat, unknownReport.Summary);
+        Check("未知驱动标注为未识别厂商", unknownReport.Products.Contains("未识别"), unknownReport.Products);
+
+        var unknownGame = new GameEntry { Name = "AcUnknownDriver", RenderDir = unknown, PreferredProxy = DeploymentService.AutoProxy };
+        Check("未知内核驱动也拦截部署", !DeploymentService.Deploy(unknownGame, source).Ok);
+
+        // --- Windows' own files must never be reported as anti-cheat drivers ---
+        var rootProbe = Path.Combine(work, "AcRootProbe");
+        Directory.CreateDirectory(rootProbe);
+        foreach (var sys in new[] { "pagefile.sys", "swapfile.sys", "hiberfil.sys" })
+            File.WriteAllBytes(Path.Combine(rootProbe, sys), RandomNumberGenerator.GetBytes(512));
+
+        var rootReport = AntiCheat.Scan(rootProbe);
+        Check("不会把 pagefile.sys 等系统文件当作驱动",
+            !rootReport.Findings.Any(f => f.Evidence.Contains("pagefile", StringComparison.OrdinalIgnoreCase) ||
+                                          f.Evidence.Contains("swapfile", StringComparison.OrdinalIgnoreCase) ||
+                                          f.Evidence.Contains("hiberfil", StringComparison.OrdinalIgnoreCase)),
+            string.Join(",", rootReport.Findings.Select(f => f.Evidence)));
+
+        // A real unknown driver alongside them is still caught.
+        File.WriteAllBytes(Path.Combine(rootProbe, "MysteryGuard.sys"), RandomNumberGenerator.GetBytes(1024));
+        var mixedReport = AntiCheat.Scan(rootProbe);
+        Check("同目录下的真实驱动仍被识别",
+            mixedReport.HasKernelAntiCheat && mixedReport.Evidence.Contains("MysteryGuard"),
+            mixedReport.Summary);
+
+        // --- the prompt shown when a protected game is added ---
+        var notice = AntiCheat.BuildUnsupportedNotice("终末地", aceReport);
+        Check("提示包含游戏名", notice.Contains("终末地"), notice);
+        Check("提示说明反作弊产品", notice.Contains("腾讯 ACE"), notice);
+        Check("提示列出证据", notice.Contains("AntiCheatExpert"), notice);
+        Check("提示告知无法生效", notice.Contains("无法生效"), notice);
+        Check("提示警示账号风险", notice.Contains("账号"), notice);
+        Check("提示引导用游戏自带功能", notice.Contains("nvngx_dlssg.dll"), notice);
+
+        var unnamed = AntiCheat.BuildUnsupportedNotice("", neacReport);
+        Check("游戏名为空时提示仍完整", unnamed.Contains("该游戏") && unnamed.Contains("NEAC"), unnamed);
+
+        // --- pointing at a game ROOT must still find anti-cheat living in a sub-folder ---
+        // Mirrors Overwatch: root\ has no exe, root\_retail_\ has the exe and the anti-cheat driver,
+        // root\_retail_\sl\ has the DLSS-G marker. Missing this would wrongly report "protected=false".
+        var owRoot = Path.Combine(work, "AcOverwatchStyle");
+        var ret = Path.Combine(owRoot, "_retail_");
+        var sl = Path.Combine(ret, "sl");
+        Directory.CreateDirectory(sl);
+        File.WriteAllBytes(Path.Combine(ret, "Overwatch.exe"), RandomNumberGenerator.GetBytes(4096));
+        File.WriteAllBytes(Path.Combine(ret, "NeacSafe64.sys"), RandomNumberGenerator.GetBytes(2048));
+        File.WriteAllBytes(Path.Combine(sl, "nvngx_dlssg.dll"), RandomNumberGenerator.GetBytes(1024));
+
+        var (resolved, resolvedExe) = Detection.ResolveRenderDir(owRoot);
+        Check("指向游戏根目录时解析到渲染目录",
+            string.Equals(Path.GetFullPath(resolved), Path.GetFullPath(ret), StringComparison.OrdinalIgnoreCase),
+            resolved);
+        Check("解析同时找到主程序", resolvedExe?.EndsWith("Overwatch.exe") == true, resolvedExe);
+
+        // The whole point of resolving first: scanning the raw root misses the driver entirely.
+        Check("直接扫根目录会漏掉反作弊（说明必须先解析）", !AntiCheat.Scan(owRoot).HasKernelAntiCheat);
+        Check("解析后再扫能发现反作弊", AntiCheat.Scan(resolved).HasKernelAntiCheat);
+
+        // Pointing straight at the render directory must not be "resolved" anywhere else.
+        var (direct, _) = Detection.ResolveRenderDir(ret);
+        Check("直接指向渲染目录时保持不变",
+            string.Equals(Path.GetFullPath(direct), Path.GetFullPath(ret), StringComparison.OrdinalIgnoreCase),
+            direct);
+
+        // A folder that is already the render directory keeps its own name for the game title.
+        Check("游戏名取自渲染目录而非通用父目录",
+            Detection.FriendlyName(ret).Equals("AcOverwatchStyle", StringComparison.OrdinalIgnoreCase),
+            Detection.FriendlyName(ret));
+
+        // --- a genuine Steam game folder ships ordinary DLLs and must NOT be flagged ---
+        var normal = MakeGameDir(work, "AcNormalGame");
+        foreach (var dll in new[] { "UnityPlayer.dll", "GameAssembly.dll", "nvngx_dlssg.dll", "sl.interposer.dll", "amd_ags_x64.dll" })
+            File.WriteAllBytes(Path.Combine(normal, dll), RandomNumberGenerator.GetBytes(1024));
+        var normalReport = AntiCheat.Scan(normal);
+        Check("普通游戏目录不误报", !normalReport.IsProtected, normalReport.Summary);
+
+        var normalGame = new GameEntry { Name = "AcNormalGame", RenderDir = normal, PreferredProxy = DeploymentService.AutoProxy };
+        Check("普通游戏仍可部署", DeploymentService.Deploy(normalGame, source).Ok);
+
+        // --- anti-cheat in a parent folder still counts ---
+        var nested = Path.Combine(work, "AcNested", "Binaries", "Win64");
+        Directory.CreateDirectory(nested);
+        File.WriteAllBytes(Path.Combine(nested, "game-Win64-Shipping.exe"), RandomNumberGenerator.GetBytes(2048));
+        File.WriteAllBytes(Path.Combine(work, "AcNested", "ACE-BASE.sys"), RandomNumberGenerator.GetBytes(2048));
+        var nestedReport = AntiCheat.Scan(nested);
+        Check("上级目录的反作弊也能发现", nestedReport.HasKernelAntiCheat, nestedReport.Summary);
+
+        // --- a game with no anti-cheat reports cleanly ---
+        var plain = Path.Combine(work, "AcPlain");
+        Directory.CreateDirectory(plain);
+        Check("空目录不误报", !AntiCheat.Scan(plain).IsProtected);
+        Check("不存在的目录标记为扫描失败", AntiCheat.Scan(Path.Combine(work, "nope")).ScanFailed);
+    }
+
+    private static void TestPersistence(string work)
+    {
+        Section("库文件持久化");
+
+        var file = Path.Combine(work, "library_roundtrip.json");
+        var data = new AppData();
+
+        var game = new GameEntry
+        {
+            Name = "持久化测试",
+            RenderDir = @"C:\fake\path",
+            ExePath = @"C:\fake\path\game.exe",
+            PreferredProxy = "winmm.dll",
+            Notes = "Steam",
+            Profile = new GameProfile { Router = "SM75", KernelImage = "Auto", HardwareBilinear = true, MaxGeneratedFrames = 2, LogLevel = 3 },
+        };
+
+        // The UI adds straight to the persisted collection; that collection must be what gets written.
+        data.Games.Add(game);
+        LibraryStore.Save(data, file);
+
+        Check("库文件已写出", File.Exists(file));
+
+        var reloaded = LibraryStore.Load(file);
+        Check("游戏数量往返一致", reloaded.Games.Count == 1, "实际: " + reloaded.Games.Count);
+
+        var r = reloaded.Games.FirstOrDefault();
+        Check("名称往返一致", r?.Name == "持久化测试", r?.Name);
+        Check("渲染目录往返一致", r?.RenderDir == @"C:\fake\path", r?.RenderDir);
+        Check("代理入口往返一致", r?.PreferredProxy == "winmm.dll", r?.PreferredProxy);
+        Check("路由往返一致", r?.Profile.Router == "SM75", r?.Profile.Router);
+        Check("内核镜像往返一致", r?.Profile.KernelImage == "Auto", r?.Profile.KernelImage);
+        Check("近似采样往返一致", r?.Profile.HardwareBilinear == true);
+        Check("倍率上限往返一致", r?.Profile.MaxGeneratedFrames == 2);
+        Check("日志级别往返一致", r?.Profile.LogLevel == 3);
+
+        // A deployment record must survive a restart, otherwise restore loses its proof of ownership.
+        r!.Deployment = new DeploymentInfo
+        {
+            ProxyName = "version.dll",
+            ModVersion = "0.2.3",
+            DeployedAt = "2026-09-10 15:00:00",
+            ProxySha256 = "ABCDEF",
+            IniSha256 = "123456",
+            Backups = new List<BackupItem> { new() { FileName = "winmm.dll", StoredPath = @"C:\b\winmm.dll", Sha256 = "AA", Size = 42 } },
+        };
+        LibraryStore.Save(reloaded, file);
+
+        var again = LibraryStore.Load(file);
+        var g2 = again.Games.FirstOrDefault();
+        Check("部署记录往返一致", g2?.Deployment?.ProxyName == "version.dll", g2?.Deployment?.ProxyName);
+        Check("备份条目往返一致", g2?.Deployment?.Backups.Count == 1, "数量: " + g2?.Deployment?.Backups.Count);
+        Check("备份哈希往返一致", g2?.Deployment?.Backups[0].Sha256 == "AA");
+
+        // Corrupt input must degrade to an empty library rather than throw on startup.
+        File.WriteAllText(Path.Combine(work, "broken.json"), "{ this is not json");
+        var fallback = LibraryStore.Load(Path.Combine(work, "broken.json"));
+        Check("损坏的库文件回退为空库", fallback.Games.Count == 0);
+
+        // Out-of-range values from a hand-edited file get clamped on load.
+        File.WriteAllText(Path.Combine(work, "outofrange.json"),
+            "{\"Games\":[{\"Name\":\"x\",\"Profile\":{\"MaxGeneratedFrames\":99,\"LogLevel\":-3,\"Router\":\"bogus\",\"KernelImage\":\"weird\"}}]}");
+        var clamped = LibraryStore.Load(Path.Combine(work, "outofrange.json"));
+        var cg = clamped.Games.FirstOrDefault();
+        Check("越界倍率被夹取", cg?.Profile.MaxGeneratedFrames == 3, "实际: " + cg?.Profile.MaxGeneratedFrames);
+        Check("越界日志级别被夹取", cg?.Profile.LogLevel == 0, "实际: " + cg?.Profile.LogLevel);
+        Check("非法路由被归一", cg?.Profile.Router == "SM86", cg?.Profile.Router);
+        Check("非法内核镜像被归一", cg?.Profile.KernelImage == "PTX", cg?.Profile.KernelImage);
+    }
+
+    private static void TestUrlPolicy()
+    {
+        Section("下载 URL 策略");
+
+        Check("允许 github.com", ModFetcher.IsAllowedAddress(new Uri("https://github.com/a/b")));
+        Check("允许 codeload.github.com", ModFetcher.IsAllowedAddress(new Uri("https://codeload.github.com/a/b")));
+        Check("拒绝 HTTP", !ModFetcher.IsAllowedAddress(new Uri("http://codeload.github.com/a/b")));
+        Check("拒绝非白名单域名", !ModFetcher.IsAllowedAddress(new Uri("https://evil.example.com/x")));
+        Check("拒绝 localhost", !ModFetcher.IsAllowedAddress(new Uri("https://localhost/x")));
+        Check("拒绝环回地址", !ModFetcher.IsAllowedAddress(new Uri("https://127.0.0.1/x")));
+        Check("拒绝内网地址", !ModFetcher.IsAllowedAddress(new Uri("https://192.168.1.1/x")));
+        Check("拒绝 file 协议", !ModFetcher.IsAllowedAddress(new Uri("file:///C:/x")));
+    }
+}

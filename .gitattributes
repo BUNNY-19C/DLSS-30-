@@ -1,0 +1,21 @@
+# 统一换行符，避免 Windows/Linux 之间产生无意义的整文件 diff。
+# 检出时用 CRLF，入库时统一用 LF。
+* text=auto eol=crlf
+
+# 明确标记为文本，便于 diff
+*.cs     text diff=csharp
+*.xaml   text
+*.csproj text
+*.sln    text
+*.md     text
+*.ini    text
+*.json   text
+
+# 二进制文件不做任何转换
+*.dll  binary
+*.exe  binary
+*.sys  binary
+*.pdb  binary
+*.zip  binary
+*.png  binary
+*.jpg  binary

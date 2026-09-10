@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Harness</AssemblyName>
+    <RootNamespace>DLSSGManager</RootNamespace>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\DLSSGManager\Models.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Store.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Native.cs" />
+    <Compile Include="..\..\src\DLSSGManager\ModSource.cs" />
+    <Compile Include="..\..\src\DLSSGManager\ModSourceLocator.cs" />
+    <Compile Include="..\..\src\DLSSGManager\ModFetcher.cs" />
+    <Compile Include="..\..\src\DLSSGManager\DeploymentService.cs" />
+    <Compile Include="..\..\src\DLSSGManager\AntiCheat.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Detection.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Gpu.cs" />
+  </ItemGroup>
+
+</Project>

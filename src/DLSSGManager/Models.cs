@@ -1,0 +1,226 @@
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization;
+using System.Windows;
+
+namespace DLSSGManager;
+
+/// <summary>Minimal INotifyPropertyChanged base so the WPF panels can bind straight to the models.</summary>
+public abstract class Observable : INotifyPropertyChanged
+{
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected void Raise([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    protected bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        Raise(name);
+        return true;
+    }
+}
+
+public enum GameStatus
+{
+    /// <summary>Nothing of ours is in the render directory.</summary>
+    NotDeployed,
+    /// <summary>Proxy DLL and INI are present and match the recorded hashes.</summary>
+    Deployed,
+    /// <summary>Files are present but no longer match what we wrote.</summary>
+    Modified,
+    /// <summary>We recorded an installation, but the files are gone.</summary>
+    Missing,
+    /// <summary>Files are present but the render directory could not be verified.</summary>
+    Unknown,
+}
+
+/// <summary>The five INI keys documented in docs/NATIVE_INI.md. Everything else in the shipped INI is a comment.</summary>
+public sealed class GameProfile : Observable
+{
+    private string _router = "SM86";
+    private string _kernelImage = "PTX";
+    private bool _hardwareBilinear;
+    private int _maxGeneratedFrames = 3;
+    private int _logLevel = 1;
+    private bool _diagnostics;
+
+    /// <summary>SM86 for RTX 30 series, SM75 for RTX 20 series.</summary>
+    public string Router { get => _router; set => Set(ref _router, value); }
+
+    /// <summary>PTX (driver JIT), Auto, or Cubin (exact match only).</summary>
+    public string KernelImage { get => _kernelImage; set => Set(ref _kernelImage, value); }
+
+    /// <summary>0 = exact output, 1 = optional approximate sampling (SM86 only).</summary>
+    public bool HardwareBilinear { get => _hardwareBilinear; set => Set(ref _hardwareBilinear, value); }
+
+    /// <summary>Capability limit 1/2/3, mapping to 2X/3X/4X.</summary>
+    public int MaxGeneratedFrames { get => _maxGeneratedFrames; set => Set(ref _maxGeneratedFrames, value); }
+
+    /// <summary>0 = off, 1 = errors, 2 = diagnostics, 3 = verbose.</summary>
+    public int LogLevel { get => _logLevel; set => Set(ref _logLevel, value); }
+
+    /// <summary>Adds the optional [Diagnostics] section used when profiling the GPU pipeline.</summary>
+    public bool Diagnostics { get => _diagnostics; set => Set(ref _diagnostics, value); }
+
+    public GameProfile Clone() => new()
+    {
+        Router = Router,
+        KernelImage = KernelImage,
+        HardwareBilinear = HardwareBilinear,
+        MaxGeneratedFrames = MaxGeneratedFrames,
+        LogLevel = LogLevel,
+        Diagnostics = Diagnostics,
+    };
+
+    public void CopyFrom(GameProfile other)
+    {
+        Router = other.Router;
+        KernelImage = other.KernelImage;
+        HardwareBilinear = other.HardwareBilinear;
+        MaxGeneratedFrames = other.MaxGeneratedFrames;
+        LogLevel = other.LogLevel;
+        Diagnostics = other.Diagnostics;
+    }
+}
+
+/// <summary>A file we displaced in the game directory, stored under the app's restore root.</summary>
+public sealed class BackupItem
+{
+    public string FileName { get; set; } = "";
+    public string StoredPath { get; set; } = "";
+    public string Sha256 { get; set; } = "";
+    public long Size { get; set; }
+}
+
+/// <summary>Record of what we put into a game directory, so restore can prove it is removing our own files.</summary>
+public sealed class DeploymentInfo
+{
+    public string ProxyName { get; set; } = "";
+    public string ModVersion { get; set; } = "";
+    public string DeployedAt { get; set; } = "";
+    public string ProxySha256 { get; set; } = "";
+    public string IniSha256 { get; set; } = "";
+    /// <summary>Folder under the restore root holding displaced originals, empty when nothing was displaced.</summary>
+    public string RestoreFolder { get; set; } = "";
+    public List<BackupItem> Backups { get; set; } = new();
+
+    [JsonIgnore] public string DeployedAtDisplay => DeployedAt;
+}
+
+public sealed class GameEntry : Observable
+{
+    private string _name = "";
+    private string _renderDir = "";
+    private string _exePath = "";
+    private string _preferredProxy = "自动";
+    private string _notes = "";
+    private GameStatus _status = GameStatus.Unknown;
+    private string _statusDetail = "";
+
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get => _name; set => Set(ref _name, value); }
+
+    /// <summary>Directory holding the real rendering executable; the proxy DLL and INI go here.</summary>
+    public string RenderDir { get => _renderDir; set => Set(ref _renderDir, value); }
+
+    /// <summary>Optional executable used by the launch button.</summary>
+    public string ExePath { get => _exePath; set => Set(ref _exePath, value); }
+
+    /// <summary>"自动" or one of the five proxy entry names.</summary>
+    public string PreferredProxy { get => _preferredProxy; set => Set(ref _preferredProxy, value); }
+
+    public string Notes { get => _notes; set => Set(ref _notes, value); }
+    public GameProfile Profile { get; set; } = new();
+    public DeploymentInfo? Deployment { get; set; }
+
+    private ProtectionReport? _protection;
+
+    /// <summary>
+    /// Anti-cheat scan result, refreshed on every deploy and status check. Raises change
+    /// notifications for itself and the banner properties derived from it.
+    /// </summary>
+    [JsonIgnore]
+    public ProtectionReport? Protection
+    {
+        get => _protection;
+        set
+        {
+            if (!Set(ref _protection, value)) return;
+            Raise(nameof(HasKernelAntiCheat));
+            Raise(nameof(AntiCheatBannerVisibility));
+            Raise(nameof(AntiCheatTitle));
+            Raise(nameof(AntiCheatBody));
+        }
+    }
+
+    [JsonIgnore]
+    public bool HasKernelAntiCheat => Protection?.HasKernelAntiCheat == true;
+
+    /// <summary>
+    /// The banner only appears for games the mod cannot work on. A clean game gets no banner at all —
+    /// an "all clear" notice is noise, and any wording next to a warning icon reads as bad news.
+    /// </summary>
+    [JsonIgnore]
+    public Visibility AntiCheatBannerVisibility =>
+        Protection?.HasKernelAntiCheat == true ? Visibility.Visible : Visibility.Collapsed;
+
+    [JsonIgnore] public string AntiCheatTitle => Protection is null ? "" : "⚠ " + Protection.Summary;
+
+    [JsonIgnore]
+    public string AntiCheatBody => Protection?.HasKernelAntiCheat == true
+        ? "内核级反作弊会在游戏启动前拦截并隔离代理 DLL，本 Mod 在这款游戏上无法生效，且检测记录可能危及账号。"
+          + "建议改用游戏自带的帧生成选项（该游戏目录里有 nvngx_dlssg.dll，说明游戏本身支持）。"
+          + "「一键恢复」可清理已被隔离的残留文件。"
+        : "";
+
+    [JsonIgnore] public GameStatus Status { get => _status; set { if (Set(ref _status, value)) { Raise(nameof(StatusText)); Raise(nameof(StatusColor)); } } }
+
+    [JsonIgnore] public string StatusDetail { get => _statusDetail; set => Set(ref _statusDetail, value); }
+
+    [JsonIgnore]
+    public string StatusText => Status switch
+    {
+        GameStatus.Deployed => "已部署",
+        GameStatus.Modified => "已被改动",
+        GameStatus.Missing => "文件缺失",
+        GameStatus.NotDeployed => "未部署",
+        _ => "未检查",
+    };
+
+    [JsonIgnore]
+    public string StatusColor => Status switch
+    {
+        GameStatus.Deployed => "#4C9A2A",
+        GameStatus.Modified => "#C77700",
+        GameStatus.Missing => "#C62828",
+        GameStatus.NotDeployed => "#9AA0A6",
+        _ => "#9AA0A6",
+    };
+
+    [JsonIgnore] public string Subtitle => string.IsNullOrWhiteSpace(RenderDir) ? "(未设置路径)" : RenderDir;
+
+    [JsonIgnore] public string DeploymentSummary => Deployment is null
+        ? "未部署"
+        : $"{Deployment.ProxyName} · Mod {Deployment.ModVersion} · {Deployment.DeployedAt}";
+}
+
+/// <summary>Everything persisted to %APPDATA%\DLSSGManager\library.json.</summary>
+public sealed class AppData
+{
+    /// <summary>
+    /// The single source of truth for the game list: the UI binds to this very collection, so anything
+    /// the user adds is guaranteed to be what <see cref="LibraryStore.Save"/> writes out.
+    /// </summary>
+    public ObservableCollection<GameEntry> Games { get; set; } = new();
+
+    public string ModSourcePath { get; set; } = "";
+    public string LastScanRoot { get; set; } = "";
+    /// <summary>Detected GPU name, cached so the UI shows something before the probe finishes.</summary>
+    public string GpuName { get; set; } = "";
+    public string GpuDriver { get; set; } = "";
+    public string RecommendedRouter { get; set; } = "SM86";
+}
