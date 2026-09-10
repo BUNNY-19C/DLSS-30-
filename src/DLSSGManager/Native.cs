@@ -54,28 +54,5 @@ public static class Native
         }
     }
 
-    /// <summary>Restarts the manager through the UAC prompt so a write-protected game folder can be written.</summary>
-    public static bool RelaunchElevated()
-    {
-        var exe = Environment.ProcessPath;
-        if (string.IsNullOrEmpty(exe)) return false;
-
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = exe,
-                UseShellExecute = true,   // Required for the runas verb; no shell string is involved.
-                Verb = "runas",
-                WorkingDirectory = AppContext.BaseDirectory,
-            };
-            System.Diagnostics.Process.Start(psi);
-            return true;
-        }
-        catch
-        {
-            // The user declined the UAC prompt.
-            return false;
-        }
-    }
+    // Restarting with elevation lives in Shell.RelaunchElevated, alongside the other shell operations.
 }

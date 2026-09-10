@@ -65,6 +65,7 @@ public static class Program
             TestAdopt(modRoot, work);
             TestDetection(modRoot, work);
             TestModSourceLocator(modRoot, work);
+            TestPathGuard(work);
             TestAntiCheat(modRoot, work);
             TestPersistence(work);
             TestUrlPolicy();
@@ -591,6 +592,67 @@ public static class Program
             !_hasModFiles
             || (found is not null && string.Equals(Path.GetFullPath(found), Path.GetFullPath(modRoot), StringComparison.OrdinalIgnoreCase)),
             found ?? "(无)");
+    }
+
+    private static void TestPathGuard(string work)
+    {
+        Section("Shell 路径校验");
+
+        var dir = Path.Combine(work, "GuardDir");
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "thing.exe");
+        File.WriteAllBytes(file, RandomNumberGenerator.GetBytes(256));
+        var doc = Path.Combine(dir, "notes.txt");
+        File.WriteAllText(doc, "hello");
+
+        Check("接受存在的目录", PathGuard.IsSafe(dir, out _), dir);
+        Check("接受存在的文件", PathGuard.IsSafe(file, out _), file);
+        Check("可执行校验接受 .exe", PathGuard.IsSafeExecutable(file, out _), file);
+
+        // Anything that is not a real, absolute path must be refused before reaching the shell.
+        Check("拒绝 null", !PathGuard.IsSafe(null, out _));
+        Check("拒绝空字符串", !PathGuard.IsSafe("", out _));
+        Check("拒绝纯空白", !PathGuard.IsSafe("   ", out _));
+        Check("拒绝不存在的路径", !PathGuard.IsSafe(Path.Combine(dir, "nope"), out _));
+        Check("拒绝相对路径", !PathGuard.IsSafe(@"some\relative\path", out _));
+        Check("拒绝 UNC 之外的无根路径", !PathGuard.IsSafe("thing.exe", out _));
+
+        // Quoting and control characters are the shape a tampered path takes.
+        Check("拒绝含引号的路径", !PathGuard.IsSafe($"\"{file}\"", out var qr), qr);
+        Check("拒绝内嵌引号", !PathGuard.IsSafe(file.Replace("thing", "th\"ing"), out var qr2), qr2);
+        Check("拒绝含换行的路径", !PathGuard.IsSafe(file + "\n", out var nr), nr);
+        Check("拒绝含制表符的路径", !PathGuard.IsSafe(dir + "\t", out var tr), tr);
+        Check("拒绝含空字符的路径", !PathGuard.IsSafe(file + "\0", out var zr), zr);
+
+        // Surrounding whitespace signals a quoting mistake upstream.
+        Check("拒绝首部空白", !PathGuard.IsSafe(" " + file, out var lr), lr);
+        Check("拒绝尾部空白", !PathGuard.IsSafe(file + " ", out var rr), rr);
+
+        // Shell metacharacters are only a problem if something re-parses the string. The ones Windows
+        // allows in file names must still work, since the shell call takes the path as one value.
+        var tricky = Path.Combine(dir, "a&b^c!d(1).exe");
+        File.WriteAllBytes(tricky, RandomNumberGenerator.GetBytes(64));
+        Check("允许文件名含 shell 元字符", PathGuard.IsSafe(tricky, out var kr), kr);
+
+        var percent = Path.Combine(dir, "100%.txt");
+        File.WriteAllText(percent, "x");
+        Check("允许文件名含百分号", PathGuard.IsSafe(percent, out var pr), pr);
+
+        var spaced = Path.Combine(dir, "my game.exe");
+        File.WriteAllBytes(spaced, RandomNumberGenerator.GetBytes(64));
+        Check("允许文件名含空格", PathGuard.IsSafe(spaced, out var sr), sr);
+
+        // Executable check is stricter than the general one.
+        Check("可执行校验拒绝非 exe", !PathGuard.IsSafeExecutable(doc, out var er), er);
+        Check("可执行校验拒绝目录", !PathGuard.IsSafeExecutable(dir, out var dr), dr);
+        Check("可执行校验拒绝不存在的 exe", !PathGuard.IsSafeExecutable(Path.Combine(dir, "no.exe"), out _));
+
+        // Opening a missing target must fail cleanly rather than reaching the shell.
+        Check("打开不存在的目录返回 false", !Shell.OpenFolder(Path.Combine(work, "GuardNope")));
+        Check("打开不存在的文件返回 false", !Shell.OpenDocument(Path.Combine(work, "GuardNope.txt")));
+        Check("启动不存在的程序返回 false", !Shell.LaunchExecutable(Path.Combine(dir, "no.exe")));
+        Check("启动非 exe 返回 false", !Shell.LaunchExecutable(doc));
+        Check("启动含引号路径返回 false", !Shell.LaunchExecutable($"\"{file}\""));
     }
 
     private static void TestAntiCheat(string modRoot, string work)

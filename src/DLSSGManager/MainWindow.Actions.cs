@@ -418,7 +418,7 @@ public partial class MainWindow
     private void OpenRenderDir_Click(object sender, RoutedEventArgs e)
     {
         var dir = Selected?.RenderDir;
-        if (!Opener.Folder(dir)) _log.Write("目录不存在或无法打开。");
+        if (!Shell.OpenFolder(dir)) _log.Write("目录不存在或无法打开。");
     }
 
     private void Launch_Click(object sender, RoutedEventArgs e)
@@ -426,7 +426,7 @@ public partial class MainWindow
         var game = Selected;
         if (game is null) return;
 
-        if (Opener.Launch(game.ExePath))
+        if (Shell.LaunchExecutable(game.ExePath))
             _log.Write("已启动 " + Path.GetFileName(game.ExePath));
         else
             _log.Write("启动失败：请先设置有效的启动程序路径。");
@@ -440,7 +440,7 @@ public partial class MainWindow
         var latest = DeploymentService.LatestLogFile(game.RenderDir);
         if (latest is not null)
         {
-            Opener.Document(latest);
+            Shell.OpenDocument(latest);
             _log.Write("已打开最新日志：" + Path.GetFileName(latest));
             return;
         }
@@ -448,7 +448,7 @@ public partial class MainWindow
         var logsDir = Path.Combine(game.RenderDir, ModSource.LogDirName, "logs");
         if (Directory.Exists(logsDir))
         {
-            Opener.Folder(logsDir);
+            Shell.OpenFolder(logsDir);
             return;
         }
 
@@ -458,7 +458,7 @@ public partial class MainWindow
     private void OpenDataDir_Click(object sender, RoutedEventArgs e)
     {
         AppPaths.EnsureCreated();
-        if (!Opener.Folder(AppPaths.Root)) _log.Write("无法打开数据目录：" + AppPaths.Root);
+        if (!Shell.OpenFolder(AppPaths.Root)) _log.Write("无法打开数据目录：" + AppPaths.Root);
     }
 
     private void ClearLog_Click(object sender, RoutedEventArgs e) => _log.Clear();
@@ -467,7 +467,7 @@ public partial class MainWindow
     {
         if (Native.IsElevated()) return;
 
-        if (Native.RelaunchElevated())
+        if (Shell.RelaunchElevated())
             Application.Current.Shutdown();
         else
             _log.Write("提权被取消或失败。也可以右键 exe 选择「以管理员身份运行」。");

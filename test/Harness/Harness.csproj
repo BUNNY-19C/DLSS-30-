@@ -18,6 +18,7 @@
     <Compile Include="..\..\src\DLSSGManager\Native.cs" />
     <Compile Include="..\..\src\DLSSGManager\ModSource.cs" />
     <Compile Include="..\..\src\DLSSGManager\ModSourceLocator.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Shell.cs" />
     <Compile Include="..\..\src\DLSSGManager\ModFetcher.cs" />
     <Compile Include="..\..\src\DLSSGManager\DeploymentService.cs" />
     <Compile Include="..\..\src\DLSSGManager\AntiCheat.cs" />
