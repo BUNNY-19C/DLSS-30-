@@ -90,15 +90,22 @@ public static class Program
     // ---- built-in downloader ------------------------------------------------
 
     /// <summary>
-    /// Runs the same download path the app's "从 GitHub 更新 Mod 文件" button uses, into a scratch
-    /// folder (or the given destination), then reports whether the result is a usable mod source.
-    /// This is what makes shipping without the 75 MB of third-party binaries safe: a fresh clone can
-    /// obtain them on demand.
+    /// Runs the same download path the app's "从 GitHub 更新 Mod 文件" button uses.
+    ///
+    /// With no argument it writes to the project's real mod folder (the same target the app would
+    /// choose), so running <c>--fetch</c> then the suite actually enables the skipped cases. Passing a
+    /// path downloads there instead and leaves it in place for inspection.
     /// </summary>
     private static int Fetch(string? destination)
     {
-        var target = destination ?? Path.Combine(Path.GetTempPath(), "dlssg_fetch_" + Guid.NewGuid().ToString("N")[..8]);
-        Console.WriteLine($"目标目录: {target}");
+        var toProjectFolder = destination is null;
+        var target = destination ?? ModSourceLocator.ResolveTarget(null);
+
+        Console.WriteLine(toProjectFolder
+            ? $"写入项目 Mod 目录: {target}"
+            : $"写入指定目录: {target}");
+        if (toProjectFolder && ModSourceLocator.LooksLikeSource(target))
+            Console.WriteLine("（该目录已有 Mod 文件，将被更新为最新版本）");
         Console.WriteLine();
 
         var progress = new Progress<string>(text => Console.WriteLine("  " + text));
@@ -115,14 +122,25 @@ public static class Program
 
         var ok = result.Ok && source.IsValid && source.Proxies.Count == 5;
 
-        if (destination is null)
+        Console.WriteLine();
+        if (ok)
         {
-            try { Directory.Delete(target, true); } catch { }
-            Console.WriteLine("（临时目录已清理）");
+            Console.WriteLine("===== 下载器验证通过 =====");
+            if (toProjectFolder)
+            {
+                Console.WriteLine("Mod 文件已就位，可重新运行测试（不带参数）执行全部用例。");
+            }
+            else
+            {
+                try { Directory.Delete(target, true); } catch { }
+                Console.WriteLine("（指定目录已清理）");
+            }
+        }
+        else
+        {
+            Console.WriteLine("===== 下载器验证失败 =====");
         }
 
-        Console.WriteLine();
-        Console.WriteLine(ok ? "===== 下载器验证通过 =====" : "===== 下载器验证失败 =====");
         return ok ? 0 : 1;
     }
 
