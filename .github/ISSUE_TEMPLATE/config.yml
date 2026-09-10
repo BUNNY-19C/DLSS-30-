@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: 下载最新版本
+    url: https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest
+    about: 安装包与绿色版都在 Releases 页面
+
+  - name: 上游 mod 的问题
+    url: https://github.com/sdli1995/dlssg_for_sm86/issues
+    about: 帧生成本身的问题（画质、性能、兼容性）请反馈给 mod 作者；本仓库只负责部署工具

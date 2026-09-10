@@ -1,0 +1,88 @@
+name: 游戏兼容性反馈
+description: 报告某款游戏能用或不能用，帮助完善兼容性记录
+labels: ["compatibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这个模板用来收集游戏的实测结果。不管是成功还是失败都有价值——
+        尤其**失败**的案例能帮助其他人少走弯路。
+
+        已确认的情况会整理进 README 的兼容性说明。
+
+  - type: input
+    id: game
+    attributes:
+      label: 游戏名称
+      placeholder: 例如：赛博朋克 2077
+    validations:
+      required: true
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: 结果
+      options:
+        - 成功 —— 帧生成正常工作
+        - 失败 —— 游戏报错或崩溃
+        - 失败 —— 被反作弊拦截
+        - 失败 —— 有画面问题（闪烁、残影、撕裂等）
+        - 部分可用 —— 能跑但有明显问题
+    validations:
+      required: true
+
+  - type: dropdown
+    id: anticheat
+    attributes:
+      label: 程序的反作弊检测结果
+      description: 选中该游戏时，配置面板顶部会显示（没有提示说明未检测到）
+      options:
+        - 未检测到反作弊
+        - 检测到内核级反作弊（程序禁止部署）
+        - 不确定 / 没注意
+    validations:
+      required: true
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: 详细情况
+      description: |
+        如果成功：帧率大概提升多少？用的什么倍率（2X/3X/4X）和分辨率？
+        如果失败：具体现象、报错文字、以及日志内容
+    validations:
+      required: true
+
+  - type: input
+    id: settings
+    attributes:
+      label: 管理器里的配置
+      description: 显卡路由、内核镜像、倍率上限、是否开启近似采样
+      placeholder: 例如：SM86 / PTX / 4X / 近似采样关
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: 显卡与驱动版本
+      placeholder: 例如：RTX 3080 Ti / 591.86
+    validations:
+      required: true
+
+  - type: input
+    id: output-resolution
+    attributes:
+      label: 输出分辨率与 DLSS 档位
+      description: 显存占用与输出分辨率直接相关
+      placeholder: 例如：2560×1440 / DLSS 平衡
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: 管理器版本
+      placeholder: 例如：1.1.0
+    validations:
+      required: true

@@ -1,8 +1,19 @@
-# DLSSG SM86 管理器
+# DLSSG 30 系管理器
+
+[![Release](https://img.shields.io/github/v/release/BUNNY-19C/DLSSG-30s-manager?style=flat-square&label=下载)](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)
+[![License](https://img.shields.io/github/license/BUNNY-19C/DLSSG-30s-manager?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D4?style=flat-square)](#)
+[![GPU](https://img.shields.io/badge/GPU-RTX%2030%20%E7%B3%BB%20(SM86)-76B900?style=flat-square)](#)
+[![.NET](https://img.shields.io/badge/.NET-8-512BD4?style=flat-square)](#)
 
 为 [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) 做的图形化管理器。把 mod 按游戏分别部署、一键恢复，不用再手工往游戏目录里复制 DLL。
 
 这是一个 DLL 代理式 mod：把 `version.dll`（或其他入口名）和 `dlssg_sm86.ini` 放到**游戏渲染 EXE 旁边**，就能让 RTX 30 系（SM86）用上 DLSS 帧生成。
+
+> [!IMPORTANT]
+> **带内核级反作弊的游戏不能用。** 反作弊会在游戏启动前拦截并隔离代理 DLL，Mod 无法生效，检测记录还可能危及账号。程序会自动检测并禁止部署，详见[反作弊章节](#反作弊哪些游戏不能用)。
+
+**[⬇ 下载最新版](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)** —— 安装包或绿色版任选，都不需要装 .NET。
 
 **主要特性**
 
@@ -14,6 +25,19 @@
 - 内置下载器可按需获取 mod 文件，仓库不必携带 75 MB 二进制
 
 ---
+
+## 目录
+
+- [直接用（推荐）](#直接用推荐)
+- [从源码运行](#从源码运行)
+- [界面说明](#界面说明)
+- [这个管理器怎么保护你的文件](#这个管理器怎么保护你的文件)
+- [反作弊：哪些游戏不能用](#反作弊哪些游戏不能用)
+- [关于显卡](#关于显卡)
+- [更新 mod 文件](#更新-mod-文件)
+- [目录结构](#目录结构)
+- [从源码构建](#从源码构建)
+- [授权](#授权)
 
 ## 直接用（推荐）
 
@@ -142,23 +166,23 @@ Get-FileHash DLSSGManager.exe -Algorithm SHA256
 
 这样即使在添加时漏看了提示，也不会有机会把文件写进受保护的游戏目录。
 
-**关于本机的实际结论**（扫描你机器上的结果）：
+**实测记录**（开发机上扫描到的游戏，供参考）：
 
-| 游戏 | 状态 |
-|---|---|
-| 绝区零 | ❌ 米哈游 HoYoKProtect |
-| 战争雷霆 | ❌ BattlEye |
-| 终末地 | ❌ 腾讯 ACE |
-| 守望先锋 | ❌ 网易 NEAC |
-| 怪物猎人荒野 | ✅ 可用 |
+| 游戏 | 反作弊 | 能否使用 |
+|---|---|---|
+| 怪物猎人荒野 | 无 | ✅ |
+| 绝区零 | 米哈游 HoYoKProtect | ❌ |
+| 战争雷霆 | BattlEye | ❌ |
+| 终末地 | 腾讯 ACE | ❌ |
+| 守望先锋 | 网易 NEAC | ❌ |
 
-五款里只有**怪物猎人荒野**没有内核级反作弊，可以装。它是唯一一个测试目标。
-
-其余四款不要尝试——实测中绝区零和终末地都会在游戏启动时弹出反作弊警告并拦截 DLL。
-
-如果你在确认风险后仍要部署，程序会弹出二次确认，明确告知不推荐。
+绝区零和终末地都实测确认过：游戏启动时反作弊会弹窗并拦截 DLL，`version.dll` 被改名隔离（留下 `version.dll.3787982156` 之类的副本）。
 
 **已经装过了怎么办**：点「一键恢复」。程序能识别并清理反作弊留下的改名副本（只删哈希或签名确认属于本项目的文件），同时移除 INI。状态栏会把这种情况显示为"已被反作弊隔离"而不是普通缺失。
+
+**如果你确认风险后仍要部署**：程序会弹出二次确认，明确标注不推荐。但请注意，这类游戏上 Mod 不会生效。
+
+**补充你的实测结果**：欢迎用[兼容性反馈](https://github.com/BUNNY-19C/DLSSG-30s-manager/issues/new?template=game_compatibility.yml)模板提交你测试的游戏，成功和失败的案例都有价值。
 
 ---
 
@@ -272,3 +296,11 @@ dotnet build -c Release
 不含 dlssg_for_sm86 发布的任何文件——那些是上游项目的产物，本项目仅按需下载并复制到游戏目录，不转发、不再授权。原因见 [docs/mod-files.md](docs/mod-files.md)。
 
 使用本 mod 前请阅读上游仓库的说明，尤其是杀软误报、显存占用和反作弊相关的限制。
+
+---
+
+## 参与
+
+欢迎提交游戏实测结果、反作弊特征或其他改进，见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+本程序只是 dlssg_for_sm86 的**部署工具**，不包含也不修改 Mod 本身。帧生成本身的问题（画质、性能、特定游戏的兼容性）请反馈给 [mod 作者](https://github.com/sdli1995/dlssg_for_sm86/issues)。

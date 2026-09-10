@@ -1,0 +1,101 @@
+name: 问题反馈
+description: 报告使用中遇到的问题
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量填完整，尤其是**游戏名**和**日志**，这两项能解决大部分排查。
+
+        > [!TIP]
+        > 如果游戏带内核级反作弊（绝区零、战争雷霆、终末地、守望先锋等），本工具无法使用——
+        > 这是设计上的限制，不是 bug。程序会自动检测并禁止部署。
+
+  - type: input
+    id: game
+    attributes:
+      label: 游戏名称
+      description: 出问题的游戏，尽量写全名
+      placeholder: 例如：怪物猎人荒野
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 管理器版本
+      description: 在 Releases 页面或安装包文件名里能看到
+      placeholder: 例如：1.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-type
+    attributes:
+      label: 使用方式
+      options:
+        - 安装包
+        - 绿色版
+        - 从源码运行
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 现象描述
+      description: 发生了什么，你期望的是什么
+      placeholder: |
+        例如：部署后进游戏，帧生成选项是灰的，看日志发现……
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 扫描 Steam 库
+        2. 选中 xxx
+        3. 点「部署到该游戏」
+        4. …
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: |
+        程序界面底部的「运行输出」内容，或 `%APPDATA%\DLSSGManager\manager.log`。
+        如果 Mod 已部署，把游戏的日志级别设为 2 再启动游戏，`<游戏目录>\dlssg_sm86\logs` 里会有更详细的信息。
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: gpu
+    attributes:
+      label: 显卡与驱动版本
+      description: 程序顶部的工具条会显示。NVIDIA 控制面板或 GPU-Z 也能查到
+      placeholder: 例如：RTX 3080 Ti / 591.86
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 版本
+      placeholder: 例如：Windows 11 23H2
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已查看「运行输出」里的错误信息
+          required: false
+        - label: 我已确认该游戏没有内核级反作弊（程序会提示）
+          required: false

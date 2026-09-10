@@ -8,7 +8,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         AppPaths.EnsureCreated();
-        AppPaths.Log($"===== 启动 DLSSG SM86 管理器 {DateTime.Now:yyyy-MM-dd HH:mm:ss} =====");
+        AppPaths.Log($"===== 启动 DLSSG 30 系管理器 {DateTime.Now:yyyy-MM-dd HH:mm:ss} =====");
 
         // A stray exception in a click handler should surface, not silently kill the window.
         DispatcherUnhandledException += OnUnhandled;
@@ -23,7 +23,7 @@ public partial class App : Application
         AppPaths.Log("界面异常: " + e.Exception);
         MessageBox.Show(
             "操作过程中出现未处理的错误：\n\n" + e.Exception.Message + "\n\n详细信息已写入日志。",
-            "DLSSG SM86 管理器", MessageBoxButton.OK, MessageBoxImage.Error);
+            "DLSSG 30 系管理器", MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
     }
 }

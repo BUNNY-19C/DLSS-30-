@@ -1,4 +1,4 @@
-; DLSSG SM86 管理器 —— 安装脚本（Inno Setup 6）
+; DLSSG 30 系管理器 —— 安装脚本（Inno Setup 6）
 ;
 ; 设计要点：
 ;
@@ -12,7 +12,7 @@
 ; 3. 因此卸载只删除程序本体，游戏列表、备份和已下载的 Mod 文件都会保留，
 ;    重装后无需重新下载。是否清除由卸载时的询问决定。
 
-#define AppName "DLSSG SM86 管理器"
+#define AppName "DLSSG 30 系管理器"
 #define AppShortName "DLSSGManager"
 #define AppPublisher "BUNNY-19C"
 #define AppUrl "https://github.com/BUNNY-19C/DLSS-30-"
