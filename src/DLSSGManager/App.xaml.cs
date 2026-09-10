@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -5,9 +6,25 @@ namespace DLSSGManager;
 
 public partial class App : Application
 {
+    /// <summary>Downloads the mod files and exits, without showing the window.</summary>
+    private const string FetchSwitch = "--fetch";
+
+    /// <summary>Suppresses dialogs and writes progress to the manager log instead.</summary>
+    private const string SilentSwitch = "--silent";
+
     protected override void OnStartup(StartupEventArgs e)
     {
         AppPaths.EnsureCreated();
+
+        // The installer runs the program with --fetch so a fresh install can arrive with its mod
+        // files already in place. Returning before base.OnStartup keeps StartupUri from opening the
+        // window, which would otherwise appear behind the installer.
+        if (HasSwitch(e.Args, FetchSwitch))
+        {
+            Shutdown(RunFetch(HasSwitch(e.Args, SilentSwitch)));
+            return;
+        }
+
         AppPaths.Log($"===== 启动 DLSSG 30 系管理器 {DateTime.Now:yyyy-MM-dd HH:mm:ss} =====");
 
         // A stray exception in a click handler should surface, not silently kill the window.
@@ -16,6 +33,51 @@ public partial class App : Application
             AppPaths.Log("未处理异常: " + args.ExceptionObject);
 
         base.OnStartup(e);
+    }
+
+    private static bool HasSwitch(string[] args, string name) =>
+        args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Fetches the mod files, returning a process exit code so the installer can tell success from
+    /// failure. Progress goes to the log because a silent run has no console to write to.
+    /// </summary>
+    private static int RunFetch(bool silent)
+    {
+        var target = ModSourceLocator.ResolveTarget(null);
+        AppPaths.Log($"[fetch] 目标目录: {target}");
+
+        try
+        {
+            var progress = new Progress<string>(text => AppPaths.Log("[fetch] " + text));
+
+            var result = ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None)
+                .GetAwaiter().GetResult();
+
+            foreach (var line in result.Lines) AppPaths.Log("[fetch] " + line);
+
+            if (result.Ok)
+            {
+                AppPaths.Log($"[fetch] 成功: {result.Message}");
+                return 0;
+            }
+
+            AppPaths.Log($"[fetch] 失败: {result.Message}");
+            if (!silent)
+                MessageBox.Show("获取 Mod 文件失败：\n\n" + result.Message + "\n\n可稍后在界面上重试。",
+                    "DLSSG 30 系管理器", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("[fetch] 异常: " + ex);
+            if (!silent)
+                MessageBox.Show("获取 Mod 文件时出错：\n\n" + ex.Message,
+                    "DLSSG 30 系管理器", MessageBoxButton.OK, MessageBoxImage.Error);
+
+            return 2;
+        }
     }
 
     private void OnUnhandled(object sender, DispatcherUnhandledExceptionEventArgs e)

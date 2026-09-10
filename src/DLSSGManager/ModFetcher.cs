@@ -2,27 +2,129 @@ using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography.X509Certificates;
 
 namespace DLSSGManager;
 
 /// <summary>
-/// Downloads the project archive from GitHub. Every request is pinned to HTTPS on an allow-listed
-/// host whose resolved addresses must all be public, redirects are followed manually under the same
-/// checks, and the response is size-capped; the app never talks to anywhere else.
+/// Obtains the dlssg_for_sm86 payload from any of several mirrors.
+///
+/// Security model
+/// ---------------
+/// The files are native DLLs that end up in game directories, so the download path is treated as
+/// hostile:
+///
+/// · Every request is HTTPS, on an allow-listed host whose resolved addresses must all be public.
+///   Redirects are followed manually with the same checks at each hop.
+/// · Response size is capped, and archive entries may not escape the destination folder.
+/// · The payload is verified after download: every proxy DLL must carry a valid Authenticode
+///   signature. For third-party mirrors the signer must also match a pinned certificate
+///   thumbprint, because the mirror is not the authority for the content. For GitHub's own
+///   endpoints the certificate is logged but not required to match, so a future certificate
+///   rotation upstream does not break downloads.
+///
+/// Sources are tried in order of authority and efficiency, so a blocked or flaky endpoint only
+/// costs a fallback rather than a failed download.
 /// </summary>
 public static class ModFetcher
 {
+    /// <summary>Hosts the downloader may ever contact.</summary>
     private static readonly string[] AllowedHosts =
     {
+        // GitHub-operated
         "github.com",
         "codeload.github.com",
         "raw.githubusercontent.com",
         "api.github.com",
+        // Third-party CDN mirror. Accepted only with a matching certificate pin.
+        "cdn.jsdelivr.net",
     };
+
+    /// <summary>
+    /// Certificate the project signs every proxy DLL with. Recorded from version.dll, winmm.dll,
+    /// dinput8.dll, winhttp.dll and dxgi.dll of Native 0.2.4 — all five share it.
+    ///
+    /// A mismatch on a mirror means the file is not the project's build, so the download is
+    /// rejected. A mismatch on GitHub's own endpoints is logged as a warning instead, so upstream
+    /// rotating its self-signed certificate does not brick the updater.
+    /// </summary>
+    private const string PinnedCertThumbprint = "A994735E6A7E9AA31FA926B3023B7C487DAB4850";
+
+    /// <summary>Signer subject fragment used as a secondary sanity check on any source.</summary>
+    private const string ExpectedSignerSubject = "DLSSG";
 
     private const long MaxArchiveBytes = 256L * 1024 * 1024;
 
-    private const string ArchiveUrl = "https://codeload.github.com/sdli1995/dlssg_for_sm86/zip/refs/heads/main";
+    private const string RepoPath = "sdli1995/dlssg_for_sm86";
+    private const string RepoRef = "main";
+
+    private sealed record Artifact(string RelativePath, bool Required, bool NeedsSignature);
+
+    /// <summary>The payload the manager actually consumes, with the checks each file needs.</summary>
+    private static readonly Artifact[] Payload =
+    {
+        new("version.dll", true, true),
+        new("dlssg_sm86.ini", true, false),
+        new("altnative/winmm.dll", true, true),
+        new("altnative/dinput8.dll", true, true),
+        new("altnative/winhttp.dll", true, true),
+        new("altnative/dxgi.dll", true, true),
+        new("config/presets/sm86-default.ini", false, false),
+        new("config/presets/sm86-performance.ini", false, false),
+        new("README.md", false, false),
+        new("THIRD_PARTY_NOTICES.txt", false, false),
+    };
+
+    /// <summary>
+    /// A download endpoint. <paramref name="Official"/> marks GitHub-operated sources, where TLS to
+    /// the repository is itself the authority and the certificate pin is advisory.
+    /// </summary>
+    private sealed record Source(string Name, bool Official, string UrlTemplate, bool IsArchive);
+
+    private static readonly Source[] Sources =
+    {
+        // One request, compressed (~28 MB). Preferred when reachable.
+        new("GitHub 归档（codeload）", true,
+            $"https://codeload.github.com/{RepoPath}/zip/refs/heads/{RepoRef}", true),
+
+        // Same content through a different entry point; useful when codeload is throttled.
+        new("GitHub API（zipball）", true,
+            $"https://api.github.com/repos/{RepoPath}/zipball/{RepoRef}", true),
+
+        // Per-file raw access. Slower (~78 MB uncompressed) but a distinct path from codeload.
+        new("GitHub 原始文件（raw）", true,
+            $"https://raw.githubusercontent.com/{RepoPath}/{RepoRef}/{{0}}", false),
+
+        // Public CDN mirror, often reachable where GitHub is not. Certificate pin enforced.
+        new("jsDelivr CDN 镜像", false,
+            $"https://cdn.jsdelivr.net/gh/{RepoPath}@{RepoRef}/{{0}}", false),
+    };
+
+    public static IReadOnlyList<string> SourceNames => Sources.Select(s => s.Name).ToArray();
+
+    /// <summary>
+    /// Environment variable naming a single source to use, for diagnosing one endpoint in isolation.
+    /// Matched case-insensitively against <see cref="Source.Name"/>; an unknown value falls back to
+    /// trying every source, so a typo cannot silently disable downloading.
+    /// </summary>
+    public const string SourceFilterVariable = "DLSSGMANAGER_SOURCE";
+
+    /// <summary>Sources to attempt, honouring <see cref="SourceFilterVariable"/> when set.</summary>
+    private static IEnumerable<Source> ActiveSources()
+    {
+        var filter = Environment.GetEnvironmentVariable(SourceFilterVariable);
+        if (string.IsNullOrWhiteSpace(filter)) return Sources;
+
+        var matched = Sources.Where(s => s.Name.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matched.Count == 0)
+        {
+            AppPaths.Log($"未识别的下载源筛选 «{filter}»，改用全部源。可用值：" +
+                         string.Join(" | ", Sources.Select(s => s.Name)));
+            return Sources;
+        }
+
+        return matched;
+    }
 
     public static bool IsAllowedAddress(Uri uri)
     {
@@ -110,47 +212,98 @@ public static class ModFetcher
         throw new InvalidOperationException("重定向次数过多。");
     }
 
+    /// <summary>
+    /// Downloads the payload, trying each source until one yields a verified result.
+    /// </summary>
     public static async Task<OpResult> DownloadIntoAsync(string destination, IProgress<string>? progress, CancellationToken ct)
     {
-        // GitHub's endpoints reset connections fairly often on some networks (observed ~25% of
-        // attempts here), so a transient failure is retried rather than surfaced to the user.
-        const int attempts = 4;
-        OpResult? last = null;
+        var failures = new List<string>();
 
-        for (var attempt = 1; attempt <= attempts; attempt++)
+        foreach (var source in ActiveSources())
         {
             ct.ThrowIfCancellationRequested();
 
-            if (attempt > 1)
+            // GitHub's endpoints reset connections fairly often on some networks (observed ~25% of
+            // attempts here), so a transient failure on one source is retried before moving on.
+            const int attemptsPerSource = 2;
+
+            for (var attempt = 1; attempt <= attemptsPerSource; attempt++)
             {
-                var wait = TimeSpan.FromSeconds(2 * (attempt - 1));
-                progress?.Report($"连接失败，{wait.TotalSeconds:F0} 秒后重试（第 {attempt}/{attempts} 次）…");
-                await Task.Delay(wait, ct).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+
+                progress?.Report($"下载源：{source.Name}" + (attempt > 1 ? $"（第 {attempt} 次尝试）" : ""));
+
+                if (attempt > 1)
+                    await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
+
+                var result = await AttemptAsync(source, destination, progress, ct).ConfigureAwait(false);
+                if (result.Ok) return result;
+
+                AppPaths.Log($"[{source.Name}] 第 {attempt}/{attemptsPerSource} 次失败: {result.Message}");
+                if (attempt == attemptsPerSource) failures.Add($"{source.Name}：{result.Message}");
             }
-
-            last = await AttemptDownloadAsync(destination, progress, ct).ConfigureAwait(false);
-            if (last.Ok) return last;
-
-            AppPaths.Log($"下载尝试 {attempt}/{attempts} 失败: {last.Message}");
         }
 
-        progress?.Report("多次重试后仍未成功");
-        return last!;
+        var r = new OpResult();
+        r.Fail("所有下载源均失败。\n     " + string.Join("\n     ", failures));
+        return r;
     }
 
-    private static async Task<OpResult> AttemptDownloadAsync(string destination, IProgress<string>? progress, CancellationToken ct)
+    private static async Task<OpResult> AttemptAsync(Source source, string destination, IProgress<string>? progress, CancellationToken ct)
     {
         var r = new OpResult();
-        Directory.CreateDirectory(destination);
-
         var staging = Path.Combine(Path.GetTempPath(), "dlssg_" + Guid.NewGuid().ToString("N"));
-        var archive = staging + ".zip";
 
         try
         {
-            progress?.Report("连接 codeload.github.com …");
+            Directory.CreateDirectory(destination);
+
+            if (source.IsArchive)
+                await FetchArchiveAsync(source, staging, r, progress, ct).ConfigureAwait(false);
+            else
+                await FetchIndividualFilesAsync(source, staging, r, progress, ct).ConfigureAwait(false);
+
+            // Verify before touching the destination: a mirror must not be able to write a DLL that
+            // is not the project's build.
+            var (accepted, message) = Verify(staging, source.Official);
+            r.Note(message);
+            if (!accepted)
+            {
+                r.Fail(message);
+                return r;
+            }
+
+            var copied = Publish(staging, destination);
+            var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName));
+
+            r.Note($"已更新 {copied} 个文件到 {destination}");
+            r.Message = version is null
+                ? $"已更新 {copied} 个文件（{source.Name}）"
+                : $"已更新到 Native {version}（{source.Name}）";
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            r.Fail("下载失败：" + ex.Message);
+        }
+        finally
+        {
+            TryDeleteDirectory(staging);
+        }
+
+        return r;
+    }
+
+    private static async Task FetchArchiveAsync(Source source, string staging, OpResult r, IProgress<string>? progress, CancellationToken ct)
+    {
+        var archive = staging + ".zip";
+        try
+        {
             using var client = CreateClient();
-            using var response = await GetCheckedAsync(client, new Uri(ArchiveUrl), ct).ConfigureAwait(false);
+            using var response = await GetCheckedAsync(client, new Uri(source.UrlTemplate), ct).ConfigureAwait(false);
 
             if (response.Content.Headers.ContentLength is long declared && declared > MaxArchiveBytes)
                 throw new InvalidOperationException($"压缩包过大（{declared / 1024 / 1024} MB），已中止。");
@@ -175,56 +328,159 @@ public static class ModFetcher
             Directory.CreateDirectory(staging);
             ZipFile.ExtractToDirectory(archive, staging, overwriteFiles: true);
 
-            var sourceRoot = Directory.EnumerateDirectories(staging).FirstOrDefault() ?? staging;
-            var wantRoot = new[] { "version.dll", "dlssg_sm86.ini", "README.md", "README.en.md", "THIRD_PARTY_NOTICES.txt" };
-            var copied = 0;
+            // The archive wraps everything in a single top-level folder whose name varies by source.
+            var inner = Directory.EnumerateDirectories(staging).FirstOrDefault();
+            if (inner is null) throw new InvalidOperationException("压缩包结构异常：未找到内容目录。");
 
-            foreach (var name in wantRoot)
+            // Flatten that wrapper so staging looks like the payload root.
+            foreach (var entry in Directory.EnumerateFileSystemEntries(inner))
             {
-                var src = Path.Combine(sourceRoot, name);
-                if (File.Exists(src))
-                {
-                    CopyInto(src, Path.Combine(destination, name), destination);
-                    copied++;
-                }
+                var target = Path.Combine(staging, Path.GetFileName(entry));
+                if (Directory.Exists(entry)) Directory.Move(entry, target);
+                else File.Move(entry, target, overwrite: true);
             }
 
-            foreach (var sub in new[] { "altnative", Path.Combine("config", "presets"), "docs" })
-            {
-                var srcDir = Path.Combine(sourceRoot, sub);
-                if (!Directory.Exists(srcDir)) continue;
-                foreach (var file in Directory.EnumerateFiles(srcDir, "*", SearchOption.AllDirectories))
-                {
-                    var rel = Path.GetRelativePath(sourceRoot, file);
-                    CopyInto(file, Path.Combine(destination, rel), destination);
-                    copied++;
-                }
-            }
-
-            var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName));
-            r.Note($"已更新 {copied} 个文件到 {destination}");
-            r.Message = version is null ? $"已更新 {copied} 个文件" : $"已更新到 Native {version}";
-        }
-        catch (Exception ex)
-        {
-            r.Fail("下载失败：" + ex.Message);
+            TryDeleteDirectory(inner);
         }
         finally
         {
             TryDelete(archive);
-            TryDeleteDirectory(staging);
         }
-
-        return r;
     }
 
-    /// <summary>Rejects any archive entry that would escape the destination folder.</summary>
+    private static async Task FetchIndividualFilesAsync(Source source, string staging, OpResult r, IProgress<string>? progress, CancellationToken ct)
+    {
+        using var client = CreateClient();
+        Directory.CreateDirectory(staging);
+
+        long total = 0;
+        var done = 0;
+
+        foreach (var artifact in Payload)
+        {
+            ct.ThrowIfCancellationRequested();
+            progress?.Report($"下载 {artifact.RelativePath}（{done + 1}/{Payload.Length}）");
+
+            // {0} is the repo-relative path; already URL-safe for these names.
+            var url = new Uri(string.Format(source.UrlTemplate, artifact.RelativePath));
+            var target = Path.Combine(staging, artifact.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+
+            // Nested entries such as altnative/winmm.dll need their folder to exist before writing.
+            var targetDir = Path.GetDirectoryName(target);
+            if (!string.IsNullOrEmpty(targetDir)) Directory.CreateDirectory(targetDir);
+
+            try
+            {
+                using var response = await GetCheckedAsync(client, url, ct).ConfigureAwait(false);
+                await using var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                await using var output = File.Create(target);
+
+                var buffer = new byte[81920];
+                int read;
+                while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                {
+                    total += read;
+                    if (total > MaxArchiveBytes) throw new InvalidOperationException("下载内容超过大小上限，已中止。");
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                }
+
+                done++;
+            }
+            catch (Exception ex) when (!artifact.Required)
+            {
+                // Optional files (readme, presets) may legitimately be absent; note and move on.
+                r.Note($"跳过可选文件 {artifact.RelativePath}：{ex.Message}");
+            }
+        }
+
+        r.Note($"已下载 {total / 1024 / 1024.0:F1} MB（{done}/{Payload.Length} 个文件）");
+    }
+
+    /// <summary>
+    /// Checks a staged payload. Required files must exist; every DLL must be signed by the project,
+    /// and on a non-official source the signer must match the pinned certificate.
+    /// </summary>
+    private static (bool Accepted, string Message) Verify(string staging, bool officialSource)
+    {
+        var missing = Payload.Where(a => a.Required && !File.Exists(Path.Combine(staging, a.RelativePath)))
+                             .Select(a => a.RelativePath)
+                             .ToList();
+        if (missing.Count > 0)
+            return (false, "内容不完整，缺少：" + string.Join("、", missing));
+
+        var pinMismatch = new List<string>();
+        var unsigned = new List<string>();
+
+        foreach (var artifact in Payload.Where(a => a.NeedsSignature))
+        {
+            var path = Path.Combine(staging, artifact.RelativePath);
+
+            // X509Certificate2 is needed for Thumbprint; the static loader returns the base type.
+            X509Certificate2? cert;
+            try
+            {
+                cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
+            }
+            catch
+            {
+                unsigned.Add(Path.GetFileName(artifact.RelativePath));
+                continue;
+            }
+
+            using (cert)
+            {
+                var subject = cert.Subject ?? "";
+                if (!subject.Contains(ExpectedSignerSubject, StringComparison.OrdinalIgnoreCase))
+                    unsigned.Add(Path.GetFileName(artifact.RelativePath));
+                else if (!string.Equals(cert.Thumbprint, PinnedCertThumbprint, StringComparison.OrdinalIgnoreCase))
+                    pinMismatch.Add(Path.GetFileName(artifact.RelativePath));
+            }
+        }
+
+        if (unsigned.Count > 0)
+            return (false, "校验失败：以下文件没有本项目的有效签名 — " + string.Join("、", unsigned));
+
+        if (pinMismatch.Count > 0)
+        {
+            var detail = "以下文件的签名证书与预期不符 — " + string.Join("、", pinMismatch);
+
+            // A mirror is not the authority for this content, so an unexpected signer is rejected.
+            if (!officialSource)
+                return (false, $"校验失败（镜像源）：{detail}");
+
+            // GitHub itself is trusted; a different certificate most likely means upstream re-signed.
+            AppPaths.Log($"警告：{detail}。来源为 GitHub 官方，已接受但请留意上游是否更换证书。");
+            return (true, $"签名证书与记录的指纹不同（{string.Join("、", pinMismatch)}）。" +
+                          "来源为 GitHub 官方，已接受；若上游更换了证书，请更新管理器。");
+        }
+
+        return (true, "签名校验通过");
+    }
+
+    /// <summary>Copies the verified payload into the destination, preserving relative paths.</summary>
+    private static int Publish(string staging, string destination)
+    {
+        var copied = 0;
+
+        foreach (var artifact in Payload)
+        {
+            var source = Path.Combine(staging, artifact.RelativePath);
+            if (!File.Exists(source)) continue;
+
+            CopyInto(source, Path.Combine(destination, artifact.RelativePath.Replace('/', Path.DirectorySeparatorChar)), destination);
+            copied++;
+        }
+
+        return copied;
+    }
+
+    /// <summary>Rejects any path that would escape the destination folder.</summary>
     private static void CopyInto(string sourceFile, string destinationFile, string destinationRoot)
     {
         var rootFull = Path.GetFullPath(destinationRoot).TrimEnd('\\') + "\\";
         var destFull = Path.GetFullPath(destinationFile);
         if (!destFull.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("压缩包条目指向目标目录之外。");
+            throw new InvalidOperationException("文件路径指向目标目录之外。");
 
         var dir = Path.GetDirectoryName(destFull);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);

@@ -33,11 +33,13 @@ mod/
 
 ## 怎么获取
 
-**方法一：程序内置下载器（推荐）**
+**方法一：程序自动获取（推荐）**
 
-图形界面：启动管理器，点工具条上的「**从 GitHub 更新 Mod 文件**」。它从 `codeload.github.com` 下载官方源码包（约 28 MB）并解压到 `mod/`，随后自动识别版本号并在界面上显示（例如「可用 · Native 0.2.3」）。
+安装包：安装向导里有「**Mod 文件**」选项组，勾选后安装过程中就会下载（约 75 MB）。在安装阶段下载的好处是安装程序已提权，因此即使装到 `Program Files` 也能写进程序目录。
 
-命令行：如果你只想要源码、暂时不构建界面，可以用测试工具里的同一个下载器：
+图形界面：启动管理器，点工具条上的「**从 GitHub 更新 Mod 文件**」。程序会依次尝试多个源（codeload → GitHub API → raw → jsDelivr CDN），直到有一个成功，随后自动识别版本号并显示（例如「可用 · Native 0.2.4」）。
+
+命令行：如果你只想要文件、暂时不构建界面，可以用测试工具里的同一个下载器：
 
 ```bash
 cd test/Harness
@@ -53,17 +55,37 @@ dotnet build -c Release
 
 从 <https://github.com/sdli1995/dlssg_for_sm86> 下载（Clone 或 Download ZIP），把根目录的 `version.dll`、`dlssg_sm86.ini`，以及 `altnative/`、`config/presets/` 两个目录复制到 `mod/` 下。保持原目录结构，程序按固定文件名和相对路径识别，无需额外配置。
 
+`mod/` 的位置规则：
+
+| 情况 | 位置 |
+|---|---|
+| 程序目录可写（大多数情况） | 程序旁的 `mod\` |
+| 程序目录不可写（装在 `Program Files` 且未提权） | `%APPDATA%\DLSSGManager\mod` |
+
 **方法三：指向别处**
 
-程序默认读 exe 同级的 `mod/`，也接受任意位置——把文件放好后，改 `%APPDATA%\DLSSGManager\library.json` 里的 `ModSourcePath` 指向该目录即可。
+程序也接受任意位置——把文件放好后，改 `%APPDATA%\DLSSGManager\library.json` 里的 `ModSourcePath` 指向该目录即可。
 
 ## 下载器的网络约束
 
 内置下载器只访问白名单内的 HTTPS 地址，并且在请求前逐个校验解析出的 IP：
 
-- 仅允许 `github.com`、`codeload.github.com`、`raw.githubusercontent.com`、`api.github.com`
+- 允许的域名：`github.com`、`codeload.github.com`、`raw.githubusercontent.com`、`api.github.com`、`cdn.jsdelivr.net`
 - 拒绝环回、内网、CGNAT、链路本地、多播与保留地址
 - 重定向的每一跳都重新校验
 - 响应体积有上限，压缩包条目不允许逃出目标目录
 
-GitHub 的下载端点在部分网络上会偶发中断连接，因此下载失败会自动重试（最多 4 次，间隔递增）。
+每个源失败会重试一次再切换到下一个，因此个别端点中断或受限只会导致降级，不会让更新整体失败。
+
+## 下载内容的校验
+
+Mod 是会被放进游戏目录的原生 DLL，所以下载路径按不可信处理。落盘之前会验证：
+
+1. **必须存在**：`version.dll`、`dlssg_sm86.ini` 与 `altnative/` 下的四个备用入口；
+2. **必须签名**：每个 DLL 都要带项目证书的有效 Authenticode 签名。注意这验证的是签名与文件内容是否匹配——改动任意一个字节都会让签名失效，因此能挡住中间方替换文件；
+3. **证书指纹必须一致**：记录值为 `A994735E6A7E9AA31FA926B3023B7C487DAB4850`（Native 0.2.4 的五个 DLL 共用）。
+
+第 3 条对镜像源是硬性要求——镜像不是内容的权威，指纹不符即拒绝。对 GitHub 官方源则记录警告后放行，以免上游更换自签名证书后更新功能失效。
+
+校验失败不会写入目标目录，程序会报告具体是哪个文件没通过。
+

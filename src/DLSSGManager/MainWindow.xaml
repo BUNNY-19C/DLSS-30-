@@ -262,8 +262,9 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Content="扫描 Steam 库" Style="{StaticResource ToolButton}" Click="ScanSteam_Click" />
                     <Button Content="扫描文件夹…" Style="{StaticResource ToolButton}" Click="ScanFolder_Click" />
-                    <Button Content="从 GitHub 更新 Mod 文件" Style="{StaticResource ToolButton}"
-                            Click="UpdateMod_Click" Margin="0" />
+                    <Button Content="下载 / 更新 Mod 文件" Style="{StaticResource ToolButton}"
+                            Click="UpdateMod_Click" Margin="0"
+                            ToolTip="从多个下载源获取 dlssg_for_sm86，下载后校验签名" />
                 </StackPanel>
             </Grid>
         </Border>

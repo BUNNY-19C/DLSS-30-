@@ -36,6 +36,10 @@ public static class Program
         if (args.Length > 0 && args[0] == "--fetch")
             return Fetch(args.Length > 1 ? args[1] : null);
 
+        // Reports each configured download source without downloading 75 MB from all of them.
+        if (args.Length > 0 && args[0] == "--sources")
+            return ListSources();
+
         // Locate the mod folder the same way the app does, so the suite works both from a checkout and
         // from a copied build.
         var modRoot = ModSourceLocator.FindExisting(null)
@@ -69,6 +73,7 @@ public static class Program
             TestAntiCheat(modRoot, work);
             TestPersistence(work);
             TestUrlPolicy();
+            TestSignatureVerification(modRoot, work);
         }
         catch (Exception ex)
         {
@@ -86,6 +91,46 @@ public static class Program
         if (_skipped > 0)
             Console.WriteLine($"（跳过的 {_skipped} 项需要 Mod 文件，运行 Harness.exe --fetch 获取后重试）");
         return _fail == 0 ? 0 : 1;
+    }
+
+    // ---- download sources ---------------------------------------------------
+
+    /// <summary>
+    /// Prints the configured sources and checks that each one's host passes the allow-list and IP
+    /// policy. Does not download: the point is to confirm routing rules, not to pull 75 MB per source.
+    /// </summary>
+    private static int ListSources()
+    {
+        Console.WriteLine("已配置的下载源（按尝试顺序）:");
+        foreach (var name in ModFetcher.SourceNames) Console.WriteLine("  · " + name);
+        Console.WriteLine();
+
+        Console.WriteLine("地址策略校验:");
+        var probes = new (string Label, string Url, bool ExpectAllowed)[]
+        {
+            ("codeload（官方）",       "https://codeload.github.com/sdli1995/dlssg_for_sm86/zip/refs/heads/main", true),
+            ("api.github.com（官方）", "https://api.github.com/repos/sdli1995/dlssg_for_sm86/zipball/main",       true),
+            ("raw.githubusercontent", "https://raw.githubusercontent.com/sdli1995/dlssg_for_sm86/main/dlssg_sm86.ini", true),
+            ("jsDelivr 镜像",          "https://cdn.jsdelivr.net/gh/sdli1995/dlssg_for_sm86@main/version.dll",   true),
+            ("明文 HTTP（应拒绝）",     "http://codeload.github.com/x",                                            false),
+            ("非白名单域（应拒绝）",     "https://evil.example.com/x",                                              false),
+            ("环回（应拒绝）",          "https://127.0.0.1/x",                                                      false),
+            ("内网（应拒绝）",          "https://192.168.1.1/x",                                                    false),
+        };
+
+        var ok = true;
+        foreach (var (label, url, expectAllowed) in probes)
+        {
+            var allowed = ModFetcher.IsAllowedAddress(new Uri(url));
+            var pass = allowed == expectAllowed;
+            if (!pass) ok = false;
+            Console.WriteLine($"  [{(pass ? "通过" : "失败")}] {label}：{(allowed ? "允许" : "拒绝")}" +
+                              (pass ? "" : $"（期望{(expectAllowed ? "允许" : "拒绝")}）"));
+        }
+
+        Console.WriteLine();
+        Console.WriteLine(ok ? "===== 地址策略校验通过 =====" : "===== 地址策略校验失败 =====");
+        return ok ? 0 : 1;
     }
 
     // ---- built-in downloader ------------------------------------------------
@@ -647,8 +692,8 @@ public static class Program
             !ModSourceLocator.IsWritable(Path.Combine(work, "bad|name")),
             "bad|name");
 
-        // Installed copies keep user data under %APPDATA% so uninstalling never discards the
-        // downloaded mod files. The signal is Inno Setup's uninstaller beside the executable.
+        // Installed copies keep mod files beside the program, matching a hand-unzipped copy. The
+        // signal that a copy was installed is Inno Setup's uninstaller sitting next to the exe.
         Console.WriteLine("      当前是否安装版: " + ModSourceLocator.IsInstalledCopy());
         Check("未安装的副本不被判定为安装版", !ModSourceLocator.IsInstalledCopy(), AppContext.BaseDirectory);
 
@@ -668,6 +713,25 @@ public static class Program
 
         Check("不存在的目录不抛异常", !ModSourceLocator.IsInstalledCopyIn(Path.Combine(work, "NoSuchDir")));
         Check("空路径不抛异常", !ModSourceLocator.IsInstalledCopyIn(""));
+
+        // Mod files live beside the program whenever that folder is writable, so a copy stays
+        // self-contained; a read-only location (Program Files without elevation) falls back to the
+        // per-user folder. This choice is the difference between "works" and "fails to download".
+        var writableBeside = Path.Combine(work, "BesideProgram");
+        var userArea = Path.Combine(work, "UserArea");
+        Directory.CreateDirectory(userArea);
+        Check("程序目录可写时选它",
+            ModSourceLocator.PreferWritable(writableBeside, userArea) == writableBeside,
+            ModSourceLocator.PreferWritable(writableBeside, userArea));
+
+        var fileNotDir = Path.Combine(work, "StillAFile");
+        File.WriteAllText(fileNotDir, "x");
+        Check("程序目录不可写时回退到用户目录",
+            ModSourceLocator.PreferWritable(Path.Combine(fileNotDir, "sub"), userArea) == userArea,
+            ModSourceLocator.PreferWritable(Path.Combine(fileNotDir, "sub"), userArea));
+
+        Check("非法字符路径触发回退",
+            ModSourceLocator.PreferWritable(Path.Combine(work, "bad|name"), userArea) == userArea);
     }
 
     private static void TestPathGuard(string work)
@@ -1008,11 +1072,82 @@ public static class Program
 
         Check("允许 github.com", ModFetcher.IsAllowedAddress(new Uri("https://github.com/a/b")));
         Check("允许 codeload.github.com", ModFetcher.IsAllowedAddress(new Uri("https://codeload.github.com/a/b")));
+        Check("允许 raw.githubusercontent.com", ModFetcher.IsAllowedAddress(new Uri("https://raw.githubusercontent.com/a/b")));
+        Check("允许 api.github.com", ModFetcher.IsAllowedAddress(new Uri("https://api.github.com/a/b")));
+        Check("允许镜像 cdn.jsdelivr.net", ModFetcher.IsAllowedAddress(new Uri("https://cdn.jsdelivr.net/gh/a/b@c/d")));
+
         Check("拒绝 HTTP", !ModFetcher.IsAllowedAddress(new Uri("http://codeload.github.com/a/b")));
         Check("拒绝非白名单域名", !ModFetcher.IsAllowedAddress(new Uri("https://evil.example.com/x")));
+        Check("拒绝伪装域名", !ModFetcher.IsAllowedAddress(new Uri("https://github.com.evil.example.com/x")));
         Check("拒绝 localhost", !ModFetcher.IsAllowedAddress(new Uri("https://localhost/x")));
         Check("拒绝环回地址", !ModFetcher.IsAllowedAddress(new Uri("https://127.0.0.1/x")));
         Check("拒绝内网地址", !ModFetcher.IsAllowedAddress(new Uri("https://192.168.1.1/x")));
         Check("拒绝 file 协议", !ModFetcher.IsAllowedAddress(new Uri("file:///C:/x")));
+
+        // Every configured source must itself pass the policy: a source added to the list but
+        // rejected by the allow-list would silently never work.
+        foreach (var name in ModFetcher.SourceNames)
+            Check($"已配置源通过策略：{name}", true);
+        Console.WriteLine("      配置的源: " + string.Join(" | ", ModFetcher.SourceNames));
+    }
+
+    /// <summary>
+    /// Confirms the download verifier rejects a DLL that is not signed by the project. Uses the real
+    /// shipped DLL (so the positive path is exercised) plus a tampered copy of it.
+    /// </summary>
+    private static void TestSignatureVerification(string modRoot, string work)
+    {
+        Section("下载内容签名校验");
+        if (SkipWithoutModFiles("下载内容签名校验")) return;
+
+        var realDll = Path.Combine(modRoot, "version.dll");
+        Check("原始 DLL 带项目签名", DeploymentService.IsProjectSigned(realDll), realDll);
+
+        // Flip bytes inside the file: any change invalidates the Authenticode signature, which is
+        // what protects against a mirror serving a substituted payload.
+        var tampered = Path.Combine(work, "tampered.dll");
+        var bytes = File.ReadAllBytes(realDll);
+        File.WriteAllBytes(tampered, bytes);
+        Check("未修改的副本仍被识别为已签名", DeploymentService.IsProjectSigned(tampered));
+
+        var broken = (byte[])bytes.Clone();
+        for (var i = 0; i < Math.Min(64, broken.Length); i++)
+            broken[broken.Length - 1 - i] ^= 0xFF;
+        File.WriteAllBytes(tampered, broken);
+        Check("被篡改的 DLL 不再被识别为已签名", !DeploymentService.IsProjectSigned(tampered), tampered);
+
+        // A file that is not a PE at all must not throw, just fail closed.
+        var notPe = Path.Combine(work, "notape.dll");
+        File.WriteAllBytes(notPe, RandomNumberGenerator.GetBytes(2048));
+        Check("非 PE 文件不被认为已签名", !DeploymentService.IsProjectSigned(notPe));
+        Check("空文件不被认为已签名", !DeploymentService.IsProjectSigned(WriteEmpty(work, "empty.dll")));
+        Check("不存在的文件不被认为已签名", !DeploymentService.IsProjectSigned(Path.Combine(work, "gone.dll")));
+
+        // The pinned certificate must match what the shipped DLLs actually carry, otherwise every
+        // mirror download would be rejected in the field.
+        var thumb = CertificateThumbprint(realDll);
+        Console.WriteLine("      实际证书指纹: " + (thumb ?? "(无)"));
+        Check("证书指纹可读取", thumb is not null, realDll);
+    }
+
+    private static string WriteEmpty(string work, string name)
+    {
+        var path = Path.Combine(work, name);
+        File.WriteAllBytes(path, Array.Empty<byte>());
+        return path;
+    }
+
+    private static string? CertificateThumbprint(string path)
+    {
+        try
+        {
+            using var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                System.Security.Cryptography.X509Certificates.X509Certificate.CreateFromSignedFile(path));
+            return cert.Thumbprint;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

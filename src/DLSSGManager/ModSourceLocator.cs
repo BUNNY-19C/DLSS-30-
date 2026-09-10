@@ -67,9 +67,10 @@ public static class ModSourceLocator
     /// <summary>
     /// Where downloads should be written.
     ///
-    /// Order: an existing source wins (so nothing is downloaded twice); then the per-user folder for
-    /// installed copies; then the repository for a checkout; then beside the executable, falling back
-    /// to the user profile if that location is read-only (e.g. an exe dropped into Program Files).
+    /// The mod files belong beside the program so a copy stays self-contained, whether it was
+    /// installed or unzipped by hand. A checkout keeps them in the repository instead, so a clean of
+    /// <c>bin\</c> does not throw away a 75 MB download. Only a read-only location (Program Files
+    /// without elevation) pushes them into the user profile.
     /// </summary>
     public static string ResolveTarget(string? configuredPath)
     {
@@ -79,16 +80,21 @@ public static class ModSourceLocator
         var existing = FindExisting(null);
         if (existing is not null) return existing;
 
-        if (IsInstalledCopy()) return AppPaths.UserModDir;
+        if (!IsInstalledCopy())
+        {
+            var repo = FindRepositoryRoot();
+            if (repo is not null) return Path.Combine(repo, "mod");
+        }
 
-        var repo = FindRepositoryRoot();
-        if (repo is not null) return Path.Combine(repo, "mod");
-
-        // A portable copy writes beside itself; a copy placed in a read-only folder cannot.
-        if (!IsWritable(AppPaths.BundledModDir)) return AppPaths.UserModDir;
-
-        return AppPaths.BundledModDir;
+        return PreferWritable(AppPaths.BundledModDir, AppPaths.UserModDir);
     }
+
+    /// <summary>
+    /// Picks the folder beside the program when it can be written to, otherwise the per-user
+    /// fallback. Separated out so the choice can be tested without relocating the executable.
+    /// </summary>
+    public static string PreferWritable(string besideProgram, string userFallback) =>
+        IsWritable(besideProgram) ? besideProgram : userFallback;
 
     /// <summary>
     /// True when the folder can be written to, creating it first if needed. Used to decide whether
@@ -114,17 +120,19 @@ public static class ModSourceLocator
     /// <summary>
     /// Folders worth searching for existing mod files, in preference order.
     ///
-    /// A checkout is only searched when the executable is not part of an installed copy: an installed
-    /// program must not pick up a stray <c>mod\</c> folder from an unrelated parent directory.
+    /// The program's own folder comes first so an installed copy keeps its mod files beside itself.
+    /// A repository is only searched for non-installed copies — an installed program must not pick up
+    /// a stray <c>mod\</c> from an unrelated parent directory. The per-user folder is last, serving
+    /// both older installs and the fallback for a read-only location such as Program Files.
     /// </summary>
     private static IEnumerable<string> CandidateFolders()
     {
+        yield return AppPaths.BundledModDir;
+
         if (!IsInstalledCopy())
         {
             var repo = FindRepositoryRoot();
             if (repo is not null) yield return Path.Combine(repo, "mod");
-
-            yield return AppPaths.BundledModDir;
         }
 
         yield return AppPaths.UserModDir;

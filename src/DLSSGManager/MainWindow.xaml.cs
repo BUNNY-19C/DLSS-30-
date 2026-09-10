@@ -75,9 +75,10 @@ public partial class MainWindow : Window
 
         var body =
             "本程序需要 dlssg_for_sm86 的文件（约 75 MB）才能部署到游戏，当前还没有获取。\n\n" +
-            "是否现在从 GitHub 下载？下载源限定为 github.com / codeload.github.com（HTTPS）。\n\n" +
+            "是否现在下载？程序会依次尝试多个源（GitHub 归档 / API / 原始文件，以及 jsDelivr 镜像），" +
+            "全部走 HTTPS，下载后会校验文件签名。\n\n" +
             "将写入：\n" + target + "\n\n" +
-            "也可以稍后点工具条上的「从 GitHub 更新 Mod 文件」，或手动放置，详见 docs/mod-files.md。";
+            "也可以稍后点工具条上的「下载 / 更新 Mod 文件」，或手动放置，详见 docs/mod-files.md。";
 
         var answer = MessageBox.Show(this, body, "首次运行：获取 Mod 文件",
             MessageBoxButton.YesNo, MessageBoxImage.Information, MessageBoxResult.Yes);
@@ -88,7 +89,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            _log.Write("已跳过自动下载。需要时点「从 GitHub 更新 Mod 文件」获取。");
+            _log.Write("已跳过自动下载。需要时点「下载 / 更新 Mod 文件」获取。");
         }
     }
 
@@ -136,8 +137,8 @@ public partial class MainWindow : Window
             ModSourceText.Text = target;
             ModSourceBadgeText.Text = "未就绪 · 请先获取 Mod 文件";
             ModSourceBadge.Background = Palette.Fill(Palette.Warn);
-            ModSourceText.ToolTip = "缺少 Mod 文件。点右侧「从 GitHub 更新 Mod 文件」自动获取，详见 docs/mod-files.md。";
-            _log.Write("Mod 文件源未就绪：尚未获取 mod 文件。点「从 GitHub 更新 Mod 文件」自动下载。");
+            ModSourceText.ToolTip = "缺少 Mod 文件。点右侧「下载 / 更新 Mod 文件」自动获取，详见 docs/mod-files.md。";
+            _log.Write("Mod 文件源未就绪：尚未获取 mod 文件。点「下载 / 更新 Mod 文件」自动下载。");
             return;
         }
 
@@ -158,8 +159,10 @@ public partial class MainWindow : Window
 
         var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
         var answer = MessageBox.Show(this,
-            "将从 GitHub 下载 dlssg_for_sm86 的最新源码包，解压并写入 Mod 文件目录：\n\n" +
-            target + "\n\n下载源限定为 github.com / codeload.github.com（HTTPS）。继续吗？",
+            "将下载 dlssg_for_sm86 的文件并写入：\n\n" +
+            target + "\n\n" +
+            "程序会依次尝试多个下载源（GitHub 归档 / API / 原始文件，以及 jsDelivr 镜像），" +
+            "全部走 HTTPS，失败会自动切换源。下载后校验文件签名，通过后才落盘。\n\n继续吗？",
             "更新 Mod 文件", MessageBoxButton.OKCancel, MessageBoxImage.Information);
         if (answer != MessageBoxResult.OK) return;
 

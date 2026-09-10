@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -42,18 +43,172 @@ public static class DeploymentService
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
-    /// <summary>True when the DLL carries the project's self-signed "DLSSG Native Project" certificate.</summary>
+    /// <summary>
+    /// True when the file's Authenticode signature is intact and was made by the project's certificate.
+    ///
+    /// <see cref="X509Certificate.CreateFromSignedFile"/> only extracts the certificate — it does not
+    /// check that the signature still matches the bytes. A tampered DLL would therefore look
+    /// "signed" if that were the only check, which matters because downloads may come from a mirror.
+    /// The signature is validated through WinVerifyTrust and the result is interpreted fail-closed.
+    /// </summary>
     public static bool IsProjectSigned(string path)
     {
-        try
+        var cert = ReadSignerCertificate(path, out var signatureIntact);
+        if (cert is null) return false;
+
+        using (cert)
         {
-            using var cert = X509Certificate.CreateFromSignedFile(path);
+            if (!signatureIntact) return false;
+
             var subject = cert.Subject ?? "";
             return subject.Contains("DLSSG", StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    /// <summary>
+    /// Reads the signer certificate and reports whether the file's signature still matches its
+    /// contents.
+    ///
+    /// A self-signed certificate cannot chain to a trusted root, so chain validation necessarily
+    /// fails even for an untouched file. Only the two outcomes that mean "the bytes are as signed"
+    /// are accepted; every other result, including a bad digest, is treated as unsigned.
+    /// </summary>
+    public static X509Certificate2? ReadSignerCertificate(string path, out bool signatureIntact)
+    {
+        signatureIntact = false;
+
+        X509Certificate2 cert;
+        try
+        {
+            cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
+        }
         catch
         {
+            // No signature block at all, or not a PE file.
+            return null;
+        }
+
+        signatureIntact = IsSignatureIntact(path);
+        return cert;
+    }
+
+    [DllImport("wintrust.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int WinVerifyTrust(IntPtr hwnd, [MarshalAs(UnmanagedType.LPStruct)] Guid actionId, IntPtr data);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WinTrustFileInfo
+    {
+        public int cbStruct;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pcwszFilePath;
+        public IntPtr hFile;
+        public IntPtr pgKnownSubject;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WinTrustData
+    {
+        public int cbStruct;
+        public IntPtr pPolicyCallbackData;
+        public IntPtr pSIPClientData;
+        public uint dwUIChoice;
+        public uint fdwRevocationChecks;
+        public uint dwUnionChoice;
+        public IntPtr pFile;
+        public uint dwStateAction;
+        public IntPtr hWVTStateData;
+        public IntPtr pwszURLReference;
+        public uint dwProvFlags;
+        public uint dwUIContext;
+        public IntPtr pSignatureSettings;
+    }
+
+    /// <summary>Generic verify; accepts any certificate including a self-signed one.</summary>
+    private static readonly Guid WinTrustActionGenericVerifyV2 =
+        new("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
+
+    private const uint WTD_UI_NONE = 2;
+    private const uint WTD_REVOKE_NONE = 0;
+    private const uint WTD_CHOICE_FILE = 1;
+    private const uint WTD_STATEACTION_VERIFY = 1;
+    private const uint WTD_STATEACTION_CLOSE = 2;
+
+    private const int S_OK = 0;
+    /// <summary>Chain terminates in an untrusted root — expected for the project's self-signed cert.</summary>
+    private const int CERT_E_UNTRUSTEDROOT = unchecked((int)0x800B0109);
+    /// <summary>No signature present, or the hash in it does not match the file.</summary>
+    private const int TRUST_E_NOSIGNATURE = unchecked((int)0x800B0100);
+    private const int TRUST_E_BAD_DIGEST = unchecked((int)0x80096010);
+
+    /// <summary>
+    /// Verifies that the file's signature matches its contents. Fails closed: anything other than
+    /// "verified" or "verified but self-signed" counts as not intact.
+    /// </summary>
+    private static bool IsSignatureIntact(string path)
+    {
+        IntPtr filePtr = IntPtr.Zero;
+        IntPtr dataPtr = IntPtr.Zero;
+
+        try
+        {
+            var fileInfo = new WinTrustFileInfo
+            {
+                cbStruct = Marshal.SizeOf<WinTrustFileInfo>(),
+                pcwszFilePath = path,
+                hFile = IntPtr.Zero,
+                pgKnownSubject = IntPtr.Zero,
+            };
+
+            filePtr = Marshal.AllocHGlobal(Marshal.SizeOf<WinTrustFileInfo>());
+            Marshal.StructureToPtr(fileInfo, filePtr, false);
+
+            var data = new WinTrustData
+            {
+                cbStruct = Marshal.SizeOf<WinTrustData>(),
+                dwUIChoice = WTD_UI_NONE,
+                fdwRevocationChecks = WTD_REVOKE_NONE,
+                dwUnionChoice = WTD_CHOICE_FILE,
+                pFile = filePtr,
+                dwStateAction = WTD_STATEACTION_VERIFY,
+                dwProvFlags = 0,
+            };
+
+            dataPtr = Marshal.AllocHGlobal(Marshal.SizeOf<WinTrustData>());
+            Marshal.StructureToPtr(data, dataPtr, false);
+
+            var result = WinVerifyTrust(IntPtr.Zero, WinTrustActionGenericVerifyV2, dataPtr);
+
+            // Close the state or the handle stays open until the process exits.
+            data.dwStateAction = WTD_STATEACTION_CLOSE;
+            Marshal.StructureToPtr(data, dataPtr, false);
+            WinVerifyTrust(IntPtr.Zero, WinTrustActionGenericVerifyV2, dataPtr);
+
+            if (result == S_OK) return true;
+
+            if (result == CERT_E_UNTRUSTEDROOT)
+            {
+                // The bytes are as signed; only the chain is untrusted, which is inherent to a
+                // self-signed certificate. Callers confirm identity via the pinned thumbprint.
+                return true;
+            }
+
+            if (result == TRUST_E_NOSIGNATURE || result == TRUST_E_BAD_DIGEST)
+            {
+                AppPaths.Log($"签名校验未通过（{(result == TRUST_E_BAD_DIGEST ? "摘要不匹配，文件可能被篡改" : "无签名")}）：{path}");
+                return false;
+            }
+
+            AppPaths.Log($"签名校验返回未知结果 0x{result:X8}，按未签名处理：{path}");
             return false;
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("验证签名失败: " + ex.Message);
+            return false;
+        }
+        finally
+        {
+            if (dataPtr != IntPtr.Zero) Marshal.FreeHGlobal(dataPtr);
+            if (filePtr != IntPtr.Zero) Marshal.FreeHGlobal(filePtr);
         }
     }
 
@@ -190,7 +345,7 @@ public static class DeploymentService
             // rather than only reporting which file is missing.
             var hint = Directory.Exists(source.Root)
                 ? $"（{source.Root}）"
-                : "（目录不存在）。请点工具条上的「从 GitHub 更新 Mod 文件」获取。";
+                : "（目录不存在）。请点工具条上的「下载 / 更新 Mod 文件」获取。";
 
             r.Fail($"Mod 文件源不可用：{source.ValidationMessage}{hint}");
             return r;
