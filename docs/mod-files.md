@@ -35,7 +35,17 @@ mod/
 
 **方法一：程序内置下载器（推荐）**
 
-启动管理器，点工具条上的「**从 GitHub 更新 Mod 文件**」。它从 `codeload.github.com` 下载官方源码包（约 28 MB）并解压到 `mod/`，随后自动识别版本号并在界面上显示（例如「可用 · Native 0.2.3」）。
+图形界面：启动管理器，点工具条上的「**从 GitHub 更新 Mod 文件**」。它从 `codeload.github.com` 下载官方源码包（约 28 MB）并解压到 `mod/`，随后自动识别版本号并在界面上显示（例如「可用 · Native 0.2.3」）。
+
+命令行：如果你只想要源码、暂时不构建界面，可以用测试工具里的同一个下载器：
+
+```bash
+cd test/Harness
+dotnet build -c Release
+./bin/Release/net8.0-windows/Harness.exe --fetch
+```
+
+它写入的目录与界面按钮一致，之后运行不带参数的测试即可执行全部用例。
 
 如果检测到文件源不可用，程序会在运行输出里说明缺什么。
 

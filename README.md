@@ -195,21 +195,23 @@ dotnet publish -c Release -r win-x64 --self-contained false \
 
 运行后点「从 GitHub 更新 Mod 文件」获取 mod 二进制，或按 [docs/mod-files.md](docs/mod-files.md) 手动放置。若要把整个目录拷给别人用，把 `mod/` 一起带上即可。
 
-测试（137 项，覆盖部署/恢复/备份保护/反作弊识别与拦截/目录解析/接管/INI 渲染/持久化/URL 策略）：
+测试（153 项，覆盖部署/恢复/备份保护/反作弊识别与拦截/目录解析/接管/INI 渲染/持久化/下载 URL 策略）：
 
 ```bash
 cd test/Harness
 dotnet build -c Release
 
-# 全量测试
+# 全量测试。未获取 Mod 文件时，依赖它们的用例会跳过并给出提示
 ./bin/Release/net8.0-windows/Harness.exe
+
+# 获取 Mod 文件（写入项目的 mod 目录，等同于点界面上的更新按钮）
+./bin/Release/net8.0-windows/Harness.exe --fetch
 
 # 只扫描本机游戏并报告反作弊情况，不改动任何文件
 ./bin/Release/net8.0-windows/Harness.exe --scan "G:\SomeGame"
-
-# 验证内置下载器（下载到临时目录，校验后自动清理）
-./bin/Release/net8.0-windows/Harness.exe --fetch
 ```
+
+测试会把数据目录指向临时位置（通过 `DLSSGMANAGER_HOME` 环境变量），不会读写你的 `library.json` 和 `manager.log`。
 
 ---
 
