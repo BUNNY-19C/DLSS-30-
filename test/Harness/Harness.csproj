@@ -16,6 +16,11 @@
 
   <ItemGroup>
     <Compile Include="..\..\src\DLSSGManager\Models.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Localization.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Strings.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Strings.zh.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Strings.en.cs" />
+    <Compile Include="..\..\src\DLSSGManager\LocalizationAudit.cs" />
     <Compile Include="..\..\src\DLSSGManager\Store.cs" />
     <Compile Include="..\..\src\DLSSGManager\Native.cs" />
     <Compile Include="..\..\src\DLSSGManager\ModSource.cs" />

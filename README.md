@@ -1,5 +1,7 @@
 # DLSSG 30 系管理器
 
+**简体中文** | [English](README.en.md)
+
 [![Release](https://img.shields.io/github/v/release/BUNNY-19C/DLSSG-30s-manager?style=flat-square&label=下载)](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)
 [![License](https://img.shields.io/github/license/BUNNY-19C/DLSSG-30s-manager?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D4?style=flat-square)](#)
@@ -36,6 +38,7 @@
 - [关于显卡](#关于显卡)
 - [更新 mod 文件](#更新-mod-文件)
 - [目录结构](#目录结构)
+- [多语言](#多语言)
 - [从源码构建](#从源码构建)
 - [授权](#授权)
 
@@ -54,7 +57,7 @@ Mod 文件（约 75 MB）不随安装包分发，程序会自动获取：**安�
 
 ### 安装包说明
 
-运行后按向导选择安装路径（默认 `C:\Program Files\DLSSG 30 系管理器`，可改到任意位置）。
+运行后按向导选择安装路径（默认 `C:\Program Files\DLSSG 30 系管理器`，可改到任意位置）。向导启动时会先让你选安装语言（简体中文 / English）。
 
 安装向导里有一个「**Mod 文件**」选项组，勾选后会在安装过程中直接下载（约 75 MB）。在安装阶段下载有个好处：安装程序此时已提权，所以**即使装到 `Program Files` 也能把文件写进程序目录**。
 
@@ -95,12 +98,13 @@ Get-FileHash DLSSGManager.exe -Algorithm SHA256
 
 ## 界面说明
 
-上方工具条显示当前 Mod 文件源和你的显卡。右上角有两个按钮：
+上方工具条显示当前 Mod 文件源和你的显卡。右上角有三个控件：
 
 - **以管理员身份重启** —— 游戏装在 `C:\Program Files` 之类的位置时，写入需要管理员权限。点这个按钮会弹 UAC 重新启动。
 - **打开数据目录** —— 打开 `%APPDATA%\DLSSGManager`，里面有配置和备份。
+- **语言** —— 界面在简体中文与英文之间切换，立即生效并记住选择。
 
-右侧配置面板里的每一项都直接对应 mod 的 INI 键，含义见 mod 作者的 [INI 文档](https://github.com/sdli1995/dlssg_for_sm86/blob/main/docs/NATIVE_INI.md)：
+配置面板里的每一项都直接对应 mod 的 INI 键，含义见 mod 作者的 [INI 文档](https://github.com/sdli1995/dlssg_for_sm86/blob/main/docs/NATIVE_INI.md)：
 
 | 界面项 | INI 键 | 说明 |
 |---|---|---|
@@ -172,19 +176,29 @@ Get-FileHash DLSSGManager.exe -Algorithm SHA256
 
 **实测记录**（开发机上扫描到的游戏，供参考）：
 
-| 游戏 | 反作弊 | 能否使用 |
+| 游戏 | 反作弊 | 结论 |
 |---|---|---|
-| 怪物猎人荒野 | 无 | ✅ |
-| 绝区零 | 米哈游 HoYoKProtect | ❌ |
-| 战争雷霆 | BattlEye | ❌ |
-| 终末地 | 腾讯 ACE | ❌ |
-| 守望先锋 | 网易 NEAC | ❌ |
+| 绝区零 | 米哈游 HoYoKProtect | ❌ 反作弊拦截 |
+| 战争雷霆 | BattlEye | ❌ 反作弊拦截 |
+| 终末地 | 腾讯 ACE | ❌ 反作弊拦截 |
+| 守望先锋 | 网易 NEAC | ❌ 反作弊拦截 |
+| 怪物猎人荒野 | 无 | ⚠ 本机实测崩溃，见下 |
 
-绝区零和终末地都实测确认过：游戏启动时反作弊会弹窗并拦截 DLL，`version.dll` 被改名隔离（留下 `version.dll.3787982156` 之类的副本）。
+前四款是反作弊直接拦截，程序会自动识别并禁止部署。
+
+**怪物猎人荒野的情况不同**：它没有反作弊，mod 也能成功加载（日志显示已接管 4 次 DLSSG 请求），但游戏随后崩溃。在同一台机器上做过对照：
+
+- 不装 mod（完整性验证后）→ 游戏正常
+- 装 mod → 崩溃，报错位置固定（`MonsterHunterWilds.exe + 0xa4d69d0`）
+- 换用互不相同的两个 mod 版本（0.1.0 与 0.2.4）→ 崩在同一位置
+- 更新 NVIDIA DLSS 运行库到最新 → 无效
+- 关闭游戏内的 DLSS 帧生成开关 → 无效
+
+需要说明的是，这不代表怪猎普遍不兼容——上游有用户在 RTX 3090 上报过成功。所以上面这条记录只反映本机情况，**建议你自行测试**：先「一键恢复」，确认游戏能正常启动后再尝试部署。
 
 **已经装过了怎么办**：点「一键恢复」。程序能识别并清理反作弊留下的改名副本（只删哈希或签名确认属于本项目的文件），同时移除 INI。状态栏会把这种情况显示为"已被反作弊隔离"而不是普通缺失。
 
-**如果你确认风险后仍要部署**：程序会弹出二次确认，明确标注不推荐。但请注意，这类游戏上 Mod 不会生效。
+**如果你确认风险后仍要部署**：程序会弹出二次确认，明确标注不推荐。但请注意，反作弊类游戏上 Mod 不会生效。
 
 **补充你的实测结果**：欢迎用[兼容性反馈](https://github.com/BUNNY-19C/DLSSG-30s-manager/issues/new?template=game_compatibility.yml)模板提交你测试的游戏，成功和失败的案例都有价值。
 
@@ -192,7 +206,7 @@ Get-FileHash DLSSGManager.exe -Algorithm SHA256
 
 ## 关于显卡
 
-本 mod 的 SM86 路径由作者在 **RTX 3080 Ti** 上实卡验证，正是当前这台机器的配置。
+本 mod 的 SM86 路径由作者在 **RTX 3080 Ti** 上实卡验证。
 
 几点需要知道：
 
@@ -202,11 +216,19 @@ Get-FileHash DLSSGManager.exe -Algorithm SHA256
 - **杀软可能误报**：这类 DLL 代理 + hook 的行为容易被启发式检测盯上。5 个 DLL 都有自签证书（文件属性 → 数字签名 可查），但自签不提供 Windows 默认信任，也不保证消除告警。
 - **游戏内要手动开帧生成**：部署完进游戏，在画面设置里启用 DLSS 帧生成。
 
+### 架构按硬件 ID 判定，而非显卡名称
+
+程序读取 **PCI 设备 ID** 来决定用 SM86 还是 SM75 路由，显卡名称只作交叉校验。
+
+这不是多余的谨慎：显卡名称存在注册表里、可以被工具改写，而设备 ID 绑在物理芯片上。实测遇到过一台机器，注册表里名称是 `RTX 4090`（Ada 架构），但硬件 ID `2208` 实际是 RTX 3080 Ti（Ampere）——按名称判断会得出"40 系不需要本 mod"的错误结论，按硬件 ID 才正确。
+
+当两者不一致时，程序会明确警告，并提示恢复显卡名称：名称错误不只是显示问题，驱动和游戏也会据此做出错误的功能判断。
+
 ---
 
 ## 更新 mod 文件
 
-点「从 GitHub 更新 Mod 文件」即可。程序会依次尝试多个下载源，直到有一个成功：
+点「下载 / 更新 Mod 文件」即可。程序会依次尝试多个下载源，直到有一个成功：
 
 | 顺序 | 源 | 说明 |
 |---|---|---|
@@ -237,7 +259,7 @@ Mod 是会被放进游戏目录的原生 DLL，所以下载路径按不可信处
 DLSSGManager/
 ├─ src/DLSSGManager/          ← 源码（WPF，.NET 8）
 ├─ test/Harness/              ← 测试与诊断工具
-├─ installer/                 ← Inno Setup 安装脚本（含简体中文语言文件）
+├─ installer/                 ← Inno Setup 安装脚本（含简体中文语言文件，英文用内置的 Default.isl）
 ├─ docs/mod-files.md          ← 为什么仓库不含 mod 二进制、如何获取
 ├─ mod/                       ← Mod 文件源（不提交，首次运行后自动下载）
 ├─ publish/ dist/             ← 发布产物（不提交）
@@ -247,12 +269,19 @@ DLSSGManager/
 
 ```
 %APPDATA%\DLSSGManager\
-├─ library.json               ← 游戏列表、每个游戏的配置、部署记录
+├─ library.json               ← 游戏列表、每个游戏的配置、部署记录、界面语言
 ├─ restore\                   ← 被占用文件的备份
+├─ mod\                       ← Mod 文件（仅当程序目录不可写时使用）
 └─ manager.log                ← 操作日志
 ```
 
 ---
+
+## 多语言
+
+界面支持**简体中文**与**英文**，在工具条右端切换，立即生效并记住选择（记录在 `library.json` 的 `InterfaceLanguage`）。安装向导启动时也会先让你选安装语言。
+
+两种语言的文案都在 `src/DLSSGManager/Strings.*.cs` 里，键必须完全对应——测试会比对两张表，缺翻译会直接导致测试失败，而不是在界面上露出键名。占位符（`{0}`）的一致性也由测试检查，避免某一种语言下参数错位。
 
 ## 从源码构建
 
@@ -290,7 +319,7 @@ dotnet publish src/DLSSGManager/DLSSGManager.csproj \
 
 发布成品由 GitHub Actions 自动构建：推送 `v*` 标签（如 `git tag v1.1.0 && git push origin v1.1.0`）会构建、测试、编译安装包并创建 Release，附上两个 exe 与 `SHA256SUMS.txt`。也可以在 Actions 页面手动触发。
 
-测试（153 项，覆盖部署/恢复/备份保护/反作弊识别与拦截/目录解析/接管/INI 渲染/持久化/下载 URL 策略）：
+测试（290 项，覆盖部署/恢复/备份保护/反作弊识别与拦截/目录解析/接管/INI 渲染/持久化/下载 URL 策略/签名校验/多语言）：
 
 ```bash
 cd test/Harness

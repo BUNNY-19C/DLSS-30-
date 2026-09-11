@@ -84,19 +84,19 @@ public static class ModFetcher
     private static readonly Source[] Sources =
     {
         // One request, compressed (~28 MB). Preferred when reachable.
-        new("GitHub 归档（codeload）", true,
+        new(Loc.T("Fetch.SourceCodeload"), true,
             $"https://codeload.github.com/{RepoPath}/zip/refs/heads/{RepoRef}", true),
 
         // Same content through a different entry point; useful when codeload is throttled.
-        new("GitHub API（zipball）", true,
+        new(Loc.T("Fetch.SourceZipball"), true,
             $"https://api.github.com/repos/{RepoPath}/zipball/{RepoRef}", true),
 
         // Per-file raw access. Slower (~78 MB uncompressed) but a distinct path from codeload.
-        new("GitHub 原始文件（raw）", true,
+        new(Loc.T("Fetch.SourceRaw"), true,
             $"https://raw.githubusercontent.com/{RepoPath}/{RepoRef}/{{0}}", false),
 
         // Public CDN mirror, often reachable where GitHub is not. Certificate pin enforced.
-        new("jsDelivr CDN 镜像", false,
+        new(Loc.T("Fetch.SourceJsDelivr"), false,
             $"https://cdn.jsdelivr.net/gh/{RepoPath}@{RepoRef}/{{0}}", false),
     };
 
@@ -118,8 +118,8 @@ public static class ModFetcher
         var matched = Sources.Where(s => s.Name.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
         if (matched.Count == 0)
         {
-            AppPaths.Log($"未识别的下载源筛选 «{filter}»，改用全部源。可用值：" +
-                         string.Join(" | ", Sources.Select(s => s.Name)));
+            AppPaths.Log(Loc.T("Fetch.UnknownFilter", filter,
+                string.Join(" | ", Sources.Select(s => s.Name))));
             return Sources;
         }
 
@@ -189,7 +189,7 @@ public static class ModFetcher
     /// <summary>Follows at most a handful of hops, re-validating every target.</summary>
     private static async Task<HttpResponseMessage> GetCheckedAsync(HttpClient client, Uri uri, CancellationToken ct)
     {
-        if (!IsAllowedAddress(uri)) throw new InvalidOperationException($"地址不允许：{uri}");
+        if (!IsAllowedAddress(uri)) throw new InvalidOperationException(Loc.T("Fetch.UrlRejected", uri));
 
         var current = uri;
         for (var hop = 0; hop < 5; hop++)
@@ -199,9 +199,9 @@ public static class ModFetcher
             {
                 var location = response.Headers.Location;
                 response.Dispose();
-                if (location is null) throw new InvalidOperationException("重定向缺少目标地址。");
+                if (location is null) throw new InvalidOperationException(Loc.T("Fetch.RedirectNoTarget"));
                 current = location.IsAbsoluteUri ? location : new Uri(current, location);
-                if (!IsAllowedAddress(current)) throw new InvalidOperationException($"重定向目标不允许：{current}");
+                if (!IsAllowedAddress(current)) throw new InvalidOperationException(Loc.T("Fetch.RedirectRejected", current));
                 continue;
             }
 
@@ -209,7 +209,7 @@ public static class ModFetcher
             return response;
         }
 
-        throw new InvalidOperationException("重定向次数过多。");
+        throw new InvalidOperationException(Loc.T("Fetch.RedirectTooMany"));
     }
 
     /// <summary>
@@ -231,7 +231,7 @@ public static class ModFetcher
             {
                 ct.ThrowIfCancellationRequested();
 
-                progress?.Report($"下载源：{source.Name}" + (attempt > 1 ? $"（第 {attempt} 次尝试）" : ""));
+                progress?.Report(attempt > 1 ? Loc.T("Fetch.Retrying", source.Name, attempt) : Loc.T("Fetch.Starting", source.Name));
 
                 if (attempt > 1)
                     await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
@@ -239,13 +239,13 @@ public static class ModFetcher
                 var result = await AttemptAsync(source, destination, progress, ct).ConfigureAwait(false);
                 if (result.Ok) return result;
 
-                AppPaths.Log($"[{source.Name}] 第 {attempt}/{attemptsPerSource} 次失败: {result.Message}");
+                AppPaths.Log(Loc.T("Fetch.AttemptFailed", source.Name, attempt, attemptsPerSource, result.Message));
                 if (attempt == attemptsPerSource) failures.Add($"{source.Name}：{result.Message}");
             }
         }
 
         var r = new OpResult();
-        r.Fail("所有下载源均失败。\n     " + string.Join("\n     ", failures));
+        r.Fail(Loc.T("Fetch.AllFailed", string.Join("\n     ", failures)));
         return r;
     }
 
@@ -276,10 +276,10 @@ public static class ModFetcher
             var copied = Publish(staging, destination);
             var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName));
 
-            r.Note($"已更新 {copied} 个文件到 {destination}");
+            r.Note(Loc.T("Fetch.Updated", copied, destination));
             r.Message = version is null
-                ? $"已更新 {copied} 个文件（{source.Name}）"
-                : $"已更新到 Native {version}（{source.Name}）";
+                ? Loc.T("Fetch.UpdatedGeneric", copied, source.Name)
+                : Loc.T("Fetch.UpdatedVersion", version, source.Name);
         }
         catch (OperationCanceledException)
         {
@@ -287,7 +287,7 @@ public static class ModFetcher
         }
         catch (Exception ex)
         {
-            r.Fail("下载失败：" + ex.Message);
+            r.Fail(Loc.T("Fetch.Failed", ex.Message));
         }
         finally
         {
@@ -306,7 +306,7 @@ public static class ModFetcher
             using var response = await GetCheckedAsync(client, new Uri(source.UrlTemplate), ct).ConfigureAwait(false);
 
             if (response.Content.Headers.ContentLength is long declared && declared > MaxArchiveBytes)
-                throw new InvalidOperationException($"压缩包过大（{declared / 1024 / 1024} MB），已中止。");
+                throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooLarge", declared / 1024 / 1024));
 
             await using (var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
             await using (var output = File.Create(archive))
@@ -317,20 +317,20 @@ public static class ModFetcher
                 while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
                 {
                     total += read;
-                    if (total > MaxArchiveBytes) throw new InvalidOperationException("压缩包超过大小上限，已中止。");
+                    if (total > MaxArchiveBytes) throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooLarge2"));
                     await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                 }
 
-                r.Note($"已下载 {total / 1024 / 1024.0:F1} MB");
+                r.Note(Loc.T("Fetch.Downloaded", $"{total / 1024 / 1024.0:F1}"));
             }
 
-            progress?.Report("解压 …");
+            progress?.Report(Loc.T("Fetch.Extracting"));
             Directory.CreateDirectory(staging);
             ZipFile.ExtractToDirectory(archive, staging, overwriteFiles: true);
 
             // The archive wraps everything in a single top-level folder whose name varies by source.
             var inner = Directory.EnumerateDirectories(staging).FirstOrDefault();
-            if (inner is null) throw new InvalidOperationException("压缩包结构异常：未找到内容目录。");
+            if (inner is null) throw new InvalidOperationException(Loc.T("Fetch.BadArchive"));
 
             // Flatten that wrapper so staging looks like the payload root.
             foreach (var entry in Directory.EnumerateFileSystemEntries(inner))
@@ -359,7 +359,7 @@ public static class ModFetcher
         foreach (var artifact in Payload)
         {
             ct.ThrowIfCancellationRequested();
-            progress?.Report($"下载 {artifact.RelativePath}（{done + 1}/{Payload.Length}）");
+            progress?.Report(Loc.T("Fetch.Downloading", artifact.RelativePath, done + 1, Payload.Length));
 
             // {0} is the repo-relative path; already URL-safe for these names.
             var url = new Uri(string.Format(source.UrlTemplate, artifact.RelativePath));
@@ -380,7 +380,7 @@ public static class ModFetcher
                 while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
                 {
                     total += read;
-                    if (total > MaxArchiveBytes) throw new InvalidOperationException("下载内容超过大小上限，已中止。");
+                    if (total > MaxArchiveBytes) throw new InvalidOperationException(Loc.T("Fetch.ContentTooLarge"));
                     await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                 }
 
@@ -389,11 +389,11 @@ public static class ModFetcher
             catch (Exception ex) when (!artifact.Required)
             {
                 // Optional files (readme, presets) may legitimately be absent; note and move on.
-                r.Note($"跳过可选文件 {artifact.RelativePath}：{ex.Message}");
+                r.Note(Loc.T("Fetch.SkippedOptional", artifact.RelativePath, ex.Message));
             }
         }
 
-        r.Note($"已下载 {total / 1024 / 1024.0:F1} MB（{done}/{Payload.Length} 个文件）");
+        r.Note(Loc.T("Fetch.DownloadedCount", $"{total / 1024 / 1024.0:F1}", done, Payload.Length));
     }
 
     /// <summary>
@@ -406,7 +406,7 @@ public static class ModFetcher
                              .Select(a => a.RelativePath)
                              .ToList();
         if (missing.Count > 0)
-            return (false, "内容不完整，缺少：" + string.Join("、", missing));
+            return (false, Loc.T("Fetch.Incomplete", Loc.Join(missing)));
 
         var pinMismatch = new List<string>();
         var unsigned = new List<string>();
@@ -438,23 +438,22 @@ public static class ModFetcher
         }
 
         if (unsigned.Count > 0)
-            return (false, "校验失败：以下文件没有本项目的有效签名 — " + string.Join("、", unsigned));
+            return (false, Loc.T("Fetch.Unsigned", Loc.Join(unsigned)));
 
         if (pinMismatch.Count > 0)
         {
-            var detail = "以下文件的签名证书与预期不符 — " + string.Join("、", pinMismatch);
+            var detail = Loc.T("Fetch.PinDetail", Loc.Join(pinMismatch));
 
             // A mirror is not the authority for this content, so an unexpected signer is rejected.
             if (!officialSource)
-                return (false, $"校验失败（镜像源）：{detail}");
+                return (false, Loc.T("Fetch.PinMismatch", detail));
 
             // GitHub itself is trusted; a different certificate most likely means upstream re-signed.
-            AppPaths.Log($"警告：{detail}。来源为 GitHub 官方，已接受但请留意上游是否更换证书。");
-            return (true, $"签名证书与记录的指纹不同（{string.Join("、", pinMismatch)}）。" +
-                          "来源为 GitHub 官方，已接受；若上游更换了证书，请更新管理器。");
+            AppPaths.Log(Loc.T("Fetch.PinWarning", detail));
+            return (true, Loc.T("Fetch.PinAccepted", Loc.Join(pinMismatch)));
         }
 
-        return (true, "签名校验通过");
+        return (true, Loc.T("Fetch.SignatureOk"));
     }
 
     /// <summary>Copies the verified payload into the destination, preserving relative paths.</summary>
@@ -480,7 +479,7 @@ public static class ModFetcher
         var rootFull = Path.GetFullPath(destinationRoot).TrimEnd('\\') + "\\";
         var destFull = Path.GetFullPath(destinationFile);
         if (!destFull.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("文件路径指向目标目录之外。");
+            throw new InvalidOperationException(Loc.T("Fetch.EscapeAttempt"));
 
         var dir = Path.GetDirectoryName(destFull);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);

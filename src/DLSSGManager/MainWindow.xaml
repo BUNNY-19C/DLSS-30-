@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:DLSSGManager"
-        Title="DLSSG 30 系管理器" Height="820" Width="1240" MinHeight="640" MinWidth="1040"
+        xmlns:loc="clr-namespace:DLSSGManager"
+        Title="{loc:Tr App.Name}" Height="820" Width="1240" MinHeight="640" MinWidth="1040"
         Background="#12141A" Foreground="#E6E8EC"
         FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13">
 
@@ -220,15 +221,15 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock Text="DLSSG 30 系管理器" FontSize="19" FontWeight="Bold" />
+                <TextBlock Text="{loc:Tr App.Name}" FontSize="19" FontWeight="Bold" />
                 <TextBlock x:Name="SubtitleText" Foreground="{StaticResource MutedBrush}"
                            FontSize="11.5" Margin="0,3,0,0"
-                           Text="为 RTX 30 系添加 DLSS 帧生成：按游戏独立配置，一键部署与恢复" />
+                           Text="{loc:Tr App.Subtitle}" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                <Button x:Name="AdminButton" Content="以管理员身份重启" Style="{StaticResource ToolButton}"
+                <Button x:Name="AdminButton" Content="{loc:Tr Toolbar.RestartAdmin}" Style="{StaticResource ToolButton}"
                         Click="AdminButton_Click" />
-                <Button Content="打开数据目录" Style="{StaticResource ToolButton}" Click="OpenDataDir_Click" />
+                <Button Content="{loc:Tr Toolbar.OpenDataDir}" Style="{StaticResource ToolButton}" Click="OpenDataDir_Click" />
             </StackPanel>
         </Grid>
 
@@ -243,7 +244,7 @@
 
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="Mod 文件源：" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="{loc:Tr Toolbar.ModSource}" Style="{StaticResource FieldLabel}" />
                         <TextBlock x:Name="ModSourceText" VerticalAlignment="Center" FontSize="12"
                                    TextTrimming="CharacterEllipsis" MaxWidth="640" />
                         <Border x:Name="ModSourceBadge" CornerRadius="3" Padding="6,1" Margin="8,0,0,0"
@@ -252,7 +253,7 @@
                         </Border>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
-                        <TextBlock Text="显卡：" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="{loc:Tr Toolbar.Gpu}" Style="{StaticResource FieldLabel}" />
                         <TextBlock x:Name="GpuText" VerticalAlignment="Center" FontSize="12" />
                         <TextBlock x:Name="RouterHintText" Foreground="{StaticResource MutedBrush}"
                                    FontSize="11.5" Margin="10,0,0,0" VerticalAlignment="Center" />
@@ -260,11 +261,15 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="扫描 Steam 库" Style="{StaticResource ToolButton}" Click="ScanSteam_Click" />
-                    <Button Content="扫描文件夹…" Style="{StaticResource ToolButton}" Click="ScanFolder_Click" />
-                    <Button Content="下载 / 更新 Mod 文件" Style="{StaticResource ToolButton}"
+                    <Button Content="{loc:Tr Toolbar.ScanSteam}" Style="{StaticResource ToolButton}" Click="ScanSteam_Click" />
+                    <Button Content="{loc:Tr Toolbar.ScanFolder}" Style="{StaticResource ToolButton}" Click="ScanFolder_Click" />
+                    <Button Content="{loc:Tr Toolbar.UpdateMod}" Style="{StaticResource ToolButton}"
                             Click="UpdateMod_Click" Margin="0"
-                            ToolTip="从多个下载源获取 dlssg_for_sm86，下载后校验签名" />
+                            ToolTip="{loc:Tr Toolbar.UpdateModTip}" />
+                    <ComboBox x:Name="LanguageCombo" Width="118" Margin="10,0,0,0"
+                              VerticalAlignment="Center"
+                              ToolTip="{loc:Tr Toolbar.Language}"
+                              SelectionChanged="LanguageCombo_SelectionChanged" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -287,12 +292,12 @@
                     </Grid.RowDefinitions>
 
                     <Grid Grid.Row="0" Margin="12,10,12,8">
-                        <TextBlock Text="游戏列表" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:Tr List.Title}" FontWeight="SemiBold" VerticalAlignment="Center" />
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button Content="添加游戏…" Style="{StaticResource ToolButton}" Padding="9,4"
+                            <Button Content="{loc:Tr List.Add}" Style="{StaticResource ToolButton}" Padding="9,4"
                                     FontSize="12" Margin="0,0,6,0" Click="AddGame_Click"
-                                    ToolTip="选择游戏文件夹，添加时自动检测反作弊" />
-                            <Button Content="移除" Style="{StaticResource ToolButton}" Padding="9,4"
+                                    ToolTip="{loc:Tr List.AddTip}" />
+                            <Button Content="{loc:Tr List.Remove}" Style="{StaticResource ToolButton}" Padding="9,4"
                                     FontSize="12" Margin="0" Click="RemoveGame_Click" />
                         </StackPanel>
                     </Grid>
@@ -354,7 +359,7 @@
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12,16,14">
                     <StackPanel>
-                        <TextBlock x:Name="NoSelectionText" Text="从左侧选择一款游戏，或先扫描添加。"
+                        <TextBlock x:Name="NoSelectionText" Text="{loc:Tr List.Empty}"
                                    Foreground="{StaticResource MutedBrush}" Margin="0,20,0,0" />
 
                         <StackPanel x:Name="DetailPanel" Visibility="Collapsed">
@@ -369,14 +374,14 @@
                                 </StackPanel>
                             </Border>
 
-                            <TextBlock Text="游戏" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                            <TextBlock Text="{loc:Tr Detail.GroupGame}" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
 
                             <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="88" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="名称" Style="{StaticResource FieldLabel}" />
+                                <TextBlock Text="{loc:Tr Detail.Name}" Style="{StaticResource FieldLabel}" />
                                 <TextBox Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
                             </Grid>
 
@@ -387,11 +392,11 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="渲染目录" Style="{StaticResource FieldLabel}" />
+                                <TextBlock Text="{loc:Tr Detail.RenderDir}" Style="{StaticResource FieldLabel}" />
                                 <TextBox Grid.Column="1" Text="{Binding RenderDir, UpdateSourceTrigger=PropertyChanged}" />
-                                <Button Grid.Column="2" Content="浏览…" Style="{StaticResource ToolButton}"
+                                <Button Grid.Column="2" Content="{loc:Tr Common.Browse}" Style="{StaticResource ToolButton}"
                                         Margin="8,0,4,0" Click="BrowseRenderDir_Click" />
-                                <Button Grid.Column="3" Content="自动检测" Style="{StaticResource ToolButton}"
+                                <Button Grid.Column="3" Content="{loc:Tr Detail.Detect}" Style="{StaticResource ToolButton}"
                                         Margin="0" Click="DetectRenderDir_Click" />
                             </Grid>
 
@@ -401,9 +406,9 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="启动程序" Style="{StaticResource FieldLabel}" />
+                                <TextBlock Text="{loc:Tr Detail.ExePath}" Style="{StaticResource FieldLabel}" />
                                 <TextBox Grid.Column="1" Text="{Binding ExePath, UpdateSourceTrigger=PropertyChanged}" />
-                                <Button Grid.Column="2" Content="浏览…" Style="{StaticResource ToolButton}"
+                                <Button Grid.Column="2" Content="{loc:Tr Common.Browse}" Style="{StaticResource ToolButton}"
                                         Margin="8,0,0,0" Click="BrowseExe_Click" />
                             </Grid>
 
@@ -412,24 +417,27 @@
                                     <ColumnDefinition Width="88" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="代理入口" Style="{StaticResource FieldLabel}" />
-                                <ComboBox x:Name="ProxyCombo" Grid.Column="1" SelectedValuePath="Content"
+                                <TextBlock Text="{loc:Tr Detail.ProxyEntry}" Style="{StaticResource FieldLabel}" />
+                                <!-- Tag carries the stable value the code compares against; Content is
+                                     the localised label. Binding SelectedValue to Content would break
+                                     as soon as the UI language changed. -->
+                                <ComboBox x:Name="ProxyCombo" Grid.Column="1" SelectedValuePath="Tag"
                                           SelectionChanged="ProxyCombo_SelectionChanged">
-                                    <ComboBoxItem Content="自动" />
-                                    <ComboBoxItem Content="version.dll" />
-                                    <ComboBoxItem Content="winmm.dll" />
-                                    <ComboBoxItem Content="dinput8.dll" />
-                                    <ComboBoxItem Content="winhttp.dll" />
-                                    <ComboBoxItem Content="dxgi.dll" />
+                                    <ComboBoxItem Content="{loc:Tr Common.Auto}" Tag="自动" />
+                                    <ComboBoxItem Content="version.dll" Tag="version.dll" />
+                                    <ComboBoxItem Content="winmm.dll" Tag="winmm.dll" />
+                                    <ComboBoxItem Content="dinput8.dll" Tag="dinput8.dll" />
+                                    <ComboBoxItem Content="winhttp.dll" Tag="winhttp.dll" />
+                                    <ComboBoxItem Content="dxgi.dll" Tag="dxgi.dll" />
                                 </ComboBox>
                             </Grid>
 
-                            <TextBlock Text="说明：代理入口必须放在渲染 EXE 旁。若某名称已被其他 Mod 占用，换一个入口即可；同一游戏只保留本项目的一个代理。"
+                            <TextBlock Text="{loc:Tr Detail.ProxyNote}"
                                        Foreground="#6E7681" FontSize="11" TextWrapping="Wrap" Margin="88,0,0,12" />
 
                             <Border Height="1" Background="{StaticResource LineBrush}" Margin="0,4,0,4" />
 
-                            <TextBlock Text="插帧配置（写入 dlssg_sm86.ini）" Style="{StaticResource SectionTitle}" Margin="0,8,0,6" />
+                            <TextBlock Text="{loc:Tr Detail.GroupFg}" Style="{StaticResource SectionTitle}" Margin="0,8,0,6" />
 
                             <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
@@ -438,13 +446,13 @@
                                     <ColumnDefinition Width="88" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="显卡路由" Style="{StaticResource FieldLabel}" />
+                                <TextBlock Text="{loc:Tr Detail.Router}" Style="{StaticResource FieldLabel}" />
                                 <ComboBox Grid.Column="1" SelectedValuePath="Content" Margin="0,0,14,0"
                                           SelectedValue="{Binding Profile.Router, Mode=TwoWay}">
                                     <ComboBoxItem Content="SM86" />
                                     <ComboBoxItem Content="SM75" />
                                 </ComboBox>
-                                <TextBlock Grid.Column="2" Text="内核镜像" Style="{StaticResource FieldLabel}" />
+                                <TextBlock Grid.Column="2" Text="{loc:Tr Detail.KernelImage}" Style="{StaticResource FieldLabel}" />
                                 <ComboBox Grid.Column="3" Width="150" SelectedValuePath="Content"
                                           SelectedValue="{Binding Profile.KernelImage, Mode=TwoWay}">
                                     <ComboBoxItem Content="PTX" />
@@ -460,42 +468,42 @@
                                     <ColumnDefinition Width="88" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="倍率上限" Style="{StaticResource FieldLabel}" />
+                                <TextBlock Text="{loc:Tr Detail.MaxFrames}" Style="{StaticResource FieldLabel}" />
                                 <ComboBox x:Name="FrameCombo" Grid.Column="1" Margin="0,0,14,0"
                                           DisplayMemberPath="Text" SelectedValuePath="Value"
                                           SelectedValue="{Binding Profile.MaxGeneratedFrames, Mode=TwoWay}" />
-                                <TextBlock Grid.Column="2" Text="日志级别" Style="{StaticResource FieldLabel}" />
+                                <TextBlock Grid.Column="2" Text="{loc:Tr Detail.LogLevel}" Style="{StaticResource FieldLabel}" />
                                 <ComboBox x:Name="LogCombo" Grid.Column="3" Width="150"
                                           DisplayMemberPath="Text" SelectedValuePath="Value"
                                           SelectedValue="{Binding Profile.LogLevel, Mode=TwoWay}" />
                             </Grid>
 
-                            <CheckBox Content="使用近似硬件双线性采样（HardwareBilinear=1，仅 SM86，会改变生成像素）"
+                            <CheckBox Content="{loc:Tr Detail.HardwareBilinear}"
                                       IsChecked="{Binding Profile.HardwareBilinear, Mode=TwoWay}" Margin="88,2,0,8" />
-                            <CheckBox Content="启用诊断计时（[Diagnostics] 段，排查用，会影响性能）"
+                            <CheckBox Content="{loc:Tr Detail.Diagnostics}"
                                       IsChecked="{Binding Profile.Diagnostics, Mode=TwoWay}" Margin="88,0,0,4" />
 
                             <Border Height="1" Background="{StaticResource LineBrush}" Margin="0,14,0,4" />
 
-                            <TextBlock Text="操作" Style="{StaticResource SectionTitle}" Margin="0,8,0,6" />
+                            <TextBlock Text="{loc:Tr Detail.GroupActions}" Style="{StaticResource SectionTitle}" Margin="0,8,0,6" />
 
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Button x:Name="DeployButton" Content="部署到该游戏" Style="{StaticResource PrimaryButton}"
+                                    <Button x:Name="DeployButton" Content="{loc:Tr Action.Deploy}" Style="{StaticResource PrimaryButton}"
                                             Click="Deploy_Click" />
-                                    <Button x:Name="RestoreButton" Content="一键恢复" Style="{StaticResource DangerButton}"
+                                    <Button x:Name="RestoreButton" Content="{loc:Tr Action.Restore}" Style="{StaticResource DangerButton}"
                                             Click="Restore_Click" />
-                                    <Button x:Name="AdoptButton" Content="接管手工安装" Style="{StaticResource ToolButton}"
+                                    <Button x:Name="AdoptButton" Content="{loc:Tr Action.Adopt}" Style="{StaticResource ToolButton}"
                                             Click="Adopt_Click" />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Button Content="检查状态" Style="{StaticResource ToolButton}" Click="Check_Click" />
-                                    <Button Content="打开游戏目录" Style="{StaticResource ToolButton}" Click="OpenRenderDir_Click" />
-                                    <Button Content="启动游戏" Style="{StaticResource ToolButton}" Click="Launch_Click" />
-                                    <Button x:Name="OpenLogButton" Content="查看 Mod 日志" Style="{StaticResource ToolButton}"
+                                    <Button Content="{loc:Tr Action.Check}" Style="{StaticResource ToolButton}" Click="Check_Click" />
+                                    <Button Content="{loc:Tr Action.OpenDir}" Style="{StaticResource ToolButton}" Click="OpenRenderDir_Click" />
+                                    <Button Content="{loc:Tr Action.Launch}" Style="{StaticResource ToolButton}" Click="Launch_Click" />
+                                    <Button x:Name="OpenLogButton" Content="{loc:Tr Action.ViewLog}" Style="{StaticResource ToolButton}"
                                             Click="OpenModLog_Click" Margin="0" />
                                 </StackPanel>
-                                <CheckBox x:Name="RemoveLogsCheck" Content="恢复时一并删除 dlssg_sm86\logs 日志目录"
+                                <CheckBox x:Name="RemoveLogsCheck" Content="{loc:Tr Action.RemoveLogs}"
                                           IsChecked="False" Margin="0,2,0,0" />
                             </StackPanel>
 
@@ -515,9 +523,9 @@
 
         <!-- Batch bar -->
         <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,12,0,10">
-            <Button Content="全部部署" Style="{StaticResource ToolButton}" Click="DeployAll_Click" />
-            <Button Content="全部恢复" Style="{StaticResource DangerButton}" Click="RestoreAll_Click" />
-            <Button Content="刷新全部状态" Style="{StaticResource ToolButton}" Click="RefreshAll_Click" />
+            <Button Content="{loc:Tr Action.DeployAll}" Style="{StaticResource ToolButton}" Click="DeployAll_Click" />
+            <Button Content="{loc:Tr Action.RestoreAll}" Style="{StaticResource DangerButton}" Click="RestoreAll_Click" />
+            <Button Content="{loc:Tr Action.RefreshAll}" Style="{StaticResource ToolButton}" Click="RefreshAll_Click" />
             <TextBlock x:Name="BatchStatusText" VerticalAlignment="Center" Margin="6,0,0,0"
                        Foreground="{StaticResource MutedBrush}" FontSize="12" />
         </StackPanel>
@@ -531,8 +539,8 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0" Margin="12,8,12,4">
-                    <TextBlock Text="运行输出" FontWeight="SemiBold" FontSize="12" Foreground="#B9C0CC" />
-                    <Button Content="清空" HorizontalAlignment="Right" Padding="9,3" FontSize="11"
+                    <TextBlock Text="{loc:Tr Action.Output}" FontWeight="SemiBold" FontSize="12" Foreground="#B9C0CC" />
+                    <Button Content="{loc:Tr Action.Clear}" HorizontalAlignment="Right" Padding="9,3" FontSize="11"
                             Style="{StaticResource ToolButton}" Click="ClearLog_Click" />
                 </Grid>
                 <TextBox x:Name="OutputBox" Grid.Row="1" Margin="8,0,8,8" IsReadOnly="True"

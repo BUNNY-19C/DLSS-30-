@@ -92,7 +92,7 @@ public static class Detection
                 var gameRoot = Path.Combine(steamApps, "common", installDir);
                 if (!Directory.Exists(gameRoot)) continue;
 
-                progress?.Report($"检查 {name}");
+                progress?.Report(Loc.T("Scan.Checking", name));
                 var hit = FindRenderTarget(gameRoot, ct);
                 if (hit is not null)
                 {
@@ -123,9 +123,9 @@ public static class Detection
             ct.ThrowIfCancellationRequested();
             var hit = ResolveFromMarker(dll);
             if (hit is null) continue;
-            hit.Source = "目录扫描";
+            hit.Source = Loc.T("Scan.SourceFolder");
             if (results.Any(x => string.Equals(x.RenderDir, hit.RenderDir, StringComparison.OrdinalIgnoreCase))) continue;
-            progress?.Report($"找到 {hit.RenderDir}");
+            progress?.Report(Loc.T("Scan.Found", hit.RenderDir));
             results.Add(hit);
         }
 

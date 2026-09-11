@@ -17,7 +17,7 @@ public sealed class ModSource
 
     public string Root { get; }
     public bool IsValid { get; }
-    public string Version { get; } = "未知";
+    public string Version { get; } = Loc.T("ModSource.UnknownVersion");
     public List<string> Proxies { get; } = new();
     public string ValidationMessage { get; } = "";
 
@@ -26,12 +26,12 @@ public sealed class ModSource
         Root = root ?? "";
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
         {
-            ValidationMessage = "目录不存在";
+            ValidationMessage = Loc.T("ModSource.DirMissing");
             return;
         }
 
         var iniPath = Path.Combine(root, IniName);
-        if (!File.Exists(iniPath)) ValidationMessage = $"缺少 {IniName}";
+        if (!File.Exists(iniPath)) ValidationMessage = Loc.T("ModSource.IniMissing", IniName);
 
         foreach (var name in ProxyCandidates)
         {
@@ -40,11 +40,11 @@ public sealed class ModSource
 
         if (Proxies.Count == 0)
             ValidationMessage = ValidationMessage.Length > 0
-                ? ValidationMessage + "，且未找到任何代理 DLL"
-                : "未找到任何代理 DLL（version.dll 或 altnative\\*.dll）";
+                ? Loc.T("ModSource.IniMissingAndNoDll", IniName)
+                : Loc.T("ModSource.NoDll");
 
         IsValid = Proxies.Count > 0 && File.Exists(iniPath);
-        if (IsValid) Version = ReadVersion(iniPath) ?? "未知";
+        if (IsValid) Version = ReadVersion(iniPath) ?? Loc.T("ModSource.UnknownVersion");
     }
 
     public static string ResolveDllPath(string root, string proxyName) =>

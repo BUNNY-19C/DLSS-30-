@@ -357,22 +357,22 @@ public static class DeploymentService
             // rather than only reporting which file is missing.
             var hint = Directory.Exists(source.Root)
                 ? $"（{source.Root}）"
-                : "（目录不存在）。请点工具条上的「下载 / 更新 Mod 文件」获取。";
+                : Loc.T("Deploy.SourceMissingHint");
 
-            r.Fail($"Mod 文件源不可用：{source.ValidationMessage}{hint}");
+            r.Fail(Loc.T("Deploy.SourceUnavailable", source.ValidationMessage, hint));
             return r;
         }
 
         if (string.IsNullOrWhiteSpace(game.RenderDir) || !Directory.Exists(game.RenderDir))
         {
-            r.Fail("渲染目录不存在，请先设置正确的路径。");
+            r.Fail(Loc.T("Deploy.NeedDir"));
             return r;
         }
 
         var running = ProcessesRunningIn(game.RenderDir);
         if (running.Count > 0)
         {
-            r.Fail("游戏正在运行，请完全退出后再部署：" + string.Join("、", running.Select(p => p.ProcessName)));
+            r.Fail(Loc.T("Deploy.GameRunning", Loc.Join(running.Select(p => p.ProcessName))));
             return r;
         }
 
@@ -381,17 +381,13 @@ public static class DeploymentService
 
         if (protection.HasKernelAntiCheat && !allowProtected)
         {
-            r.Fail(
-                $"已阻止部署：{protection.Summary}（{protection.Evidence}）。\n" +
-                "     内核级反作弊会在游戏启动前就拦截并隔离代理 DLL，因此本 Mod 在这款游戏上无法生效，" +
-                "而且检测记录可能危及账号。请改用游戏自带的帧生成选项。\n" +
-                "     如果你确认理解风险，可在确认对话框中选择仍然部署。");
+            r.Fail(Loc.T("Deploy.BlockedKernel", protection.Summary, protection.Evidence));
             return r;
         }
 
         if (!IsWritable(game.RenderDir))
         {
-            r.Fail("没有写入权限。请用管理员身份重新启动本管理器（设置 → 以管理员身份重启）。");
+            r.Fail(Loc.T("Deploy.NoPermission"));
             return r;
         }
 
@@ -399,9 +395,8 @@ public static class DeploymentService
         if (proxy is null)
         {
             r.Fail(string.Equals(game.PreferredProxy, AutoProxy, StringComparison.OrdinalIgnoreCase)
-                ? "五个代理入口名（version/winmm/dinput8/winhttp/dxgi）在游戏目录里都已被占用。" +
-                  "请在该游戏的设置里手动指定一个入口名，或先移除占用它的 Mod。"
-                : $"代理名 \"{game.PreferredProxy}\" 不是有效的入口名。请从下拉列表中选择。");
+                ? Loc.T("Detail.EntriesTaken")
+                : Loc.T("Deploy.InvalidProxyName", game.PreferredProxy));
             return r;
         }
 
@@ -411,7 +406,7 @@ public static class DeploymentService
 
         if (proxyTaken)
         {
-            r.Fail($"五个入口名都被占用（{proxy} 已被其他 Mod 使用）。请在该游戏的设置里手动指定一个入口名，或先移除占用它的 Mod。");
+            r.Fail(Loc.T("Deploy.ProxyTaken", proxy));
             return r;
         }
 
@@ -445,7 +440,7 @@ public static class DeploymentService
 
             foreach (var (name, path) in redundantProxies)
             {
-                r.Note($"移除多余的代理入口 {name}（本项目只允许保留一个）");
+                r.Note(Loc.T("Deploy.RemoveRedundant", name));
                 File.Delete(path);
             }
 
@@ -471,19 +466,23 @@ public static class DeploymentService
                 Backups = backups,
             };
 
-            r.Note($"已部署 {proxy} + {ModSource.IniName} → {game.RenderDir}");
-            r.Note($"  路由 {game.Profile.Router} / {game.Profile.KernelImage} / 最大 {game.Profile.MaxGeneratedFrames + 1}X / " +
-                   $"近似采样 {(game.Profile.HardwareBilinear ? "开" : "关")} / 日志 {game.Profile.LogLevel}");
+            r.Note(Loc.T("Deploy.Done", proxy, ModSource.IniName, game.RenderDir));
+            r.Note(Loc.T("Detail.SettingSummary",
+                game.Profile.Router,
+                game.Profile.KernelImage,
+                game.Profile.MaxGeneratedFrames + 1,
+                Loc.T(game.Profile.HardwareBilinear ? "Deploy.On" : "Deploy.Off"),
+                game.Profile.LogLevel));
             if (backups.Count > 0)
             {
-                r.Note($"  已备份被占用的原文件 {backups.Count} 个 → {restoreFolder}");
+                r.Note(Loc.T("Deploy.BackedUp", backups.Count, restoreFolder));
             }
 
-            r.Message = $"部署完成：{proxy}";
+            r.Message = Loc.T("Deploy.Success", proxy);
         }
         catch (Exception ex)
         {
-            r.Fail("部署失败：" + ex.Message);
+            r.Fail(Loc.T("Deploy.Failed", ex.Message));
         }
 
         return r;
@@ -501,7 +500,7 @@ public static class DeploymentService
             Sha256 = Sha256(stored),
             Size = new FileInfo(stored).Length,
         };
-        r.Note($"  备份 {item.FileName}（{item.Size / 1024} KB）");
+        r.Note(Loc.T("Deploy.BackupFile", item.FileName, item.Size / 1024));
         return item;
     }
 
@@ -511,20 +510,20 @@ public static class DeploymentService
 
         if (string.IsNullOrWhiteSpace(game.RenderDir) || !Directory.Exists(game.RenderDir))
         {
-            r.Fail("渲染目录不存在，无法恢复。");
+            r.Fail(Loc.T("Restore.NeedDir"));
             return r;
         }
 
         var running = ProcessesRunningIn(game.RenderDir);
         if (running.Count > 0)
         {
-            r.Fail("游戏正在运行，请完全退出后再恢复：" + string.Join("、", running.Select(p => p.ProcessName)));
+            r.Fail(Loc.T("Restore.GameRunning", Loc.Join(running.Select(p => p.ProcessName))));
             return r;
         }
 
         if (!IsWritable(game.RenderDir))
         {
-            r.Fail("没有写入权限。请用管理员身份重新启动本管理器。");
+            r.Fail(Loc.T("Deploy.NoPermission"));
             return r;
         }
 
@@ -553,11 +552,11 @@ public static class DeploymentService
                 {
                     File.Delete(path);
                     removed++;
-                    r.Note($"已移除 {name}");
+                    r.Note(Loc.T("Restore.Removed", name));
                 }
                 else
                 {
-                    r.Note($"保留 {name}：内容与本记录不符，未删除。");
+                    r.Note(Loc.T("Restore.ProxyKept", name));
                 }
             }
 
@@ -572,15 +571,15 @@ public static class DeploymentService
                 if (byHash || byBanner)
                 {
                     if (prev is not null && !byHash)
-                        r.Note($"移除 {ModSource.IniName}：内容已被手工修改，仍属本项目文件。");
+                        r.Note(Loc.T("Restore.IniEdited", ModSource.IniName));
 
                     File.Delete(iniPath);
                     removed++;
-                    r.Note($"已移除 {ModSource.IniName}");
+                    r.Note(Loc.T("Restore.Removed", ModSource.IniName));
                 }
                 else
                 {
-                    r.Note($"保留 {ModSource.IniName}：不是本项目的配置文件，未删除。");
+                    r.Note(Loc.T("Restore.IniForeign", ModSource.IniName));
                 }
             }
 
@@ -594,11 +593,11 @@ public static class DeploymentService
                     {
                         File.Delete(copy);
                         removed++;
-                        r.Note($"已清理被隔离的副本 {Path.GetFileName(copy)}");
+                        r.Note(Loc.T("Restore.QuarantinedRemoved", Path.GetFileName(copy)));
                     }
                     catch (Exception ex)
                     {
-                        r.Note($"无法清理 {Path.GetFileName(copy)}：{ex.Message}");
+                        r.Note(Loc.T("Restore.QuarantinedFailed", Path.GetFileName(copy), ex.Message));
                     }
                 }
             }
@@ -610,14 +609,14 @@ public static class DeploymentService
                 {
                     if (!File.Exists(b.StoredPath))
                     {
-                        r.Note($"备份文件已丢失，跳过还原：{b.FileName}");
+                        r.Note(Loc.T("Restore.BackupLost", b.FileName));
                         continue;
                     }
 
                     var dest = Path.Combine(game.RenderDir, b.FileName);
                     File.Copy(b.StoredPath, dest, overwrite: true);
                     removed++;
-                    r.Note($"已还原 {b.FileName}");
+                    r.Note(Loc.T("Restore.BackupRestored", b.FileName));
                 }
             }
 
@@ -627,17 +626,17 @@ public static class DeploymentService
                 if (Directory.Exists(logs))
                 {
                     Directory.Delete(logs, recursive: true);
-                    r.Note($"已删除日志目录 {ModSource.LogDirName}\\");
+                    r.Note(Loc.T("Restore.LogsDeleted", ModSource.LogDirName));
                 }
             }
 
             game.Deployment = null;
-            r.Message = removed > 0 ? $"恢复完成，处理 {removed} 项。" : "没有需要恢复的文件。";
+            r.Message = removed > 0 ? Loc.T("Restore.Done", removed) : Loc.T("Restore.None");
             r.Note(r.Message);
         }
         catch (Exception ex)
         {
-            r.Fail("恢复失败：" + ex.Message);
+            r.Fail(Loc.T("Restore.Failed", ex.Message));
         }
 
         return r;
@@ -669,14 +668,14 @@ public static class DeploymentService
         var r = new OpResult();
         if (!Directory.Exists(game.RenderDir))
         {
-            r.Fail("渲染目录不存在。");
+            r.Fail(Loc.T("Restore.NeedDir"));
             return r;
         }
 
         var proxy = FindInstalledProxy(game.RenderDir);
         if (proxy is null)
         {
-            r.Fail("该目录没有找到本项目签名的代理 DLL。");
+            r.Fail(Loc.T("Adopt.NotFound"));
             return r;
         }
 
@@ -687,17 +686,17 @@ public static class DeploymentService
         game.Deployment = new DeploymentInfo
         {
             ProxyName = proxy,
-            ModVersion = iniExists ? ModSource.ReadVersion(iniPath) ?? "未知" : "未知",
-            DeployedAt = File.GetLastWriteTime(proxyPath).ToString("yyyy-MM-dd HH:mm:ss") + "（接管）",
+            ModVersion = (iniExists ? ModSource.ReadVersion(iniPath) : null) ?? Loc.T("ModSource.UnknownVersion"),
+            DeployedAt = File.GetLastWriteTime(proxyPath).ToString("yyyy-MM-dd HH:mm:ss") + Loc.T("Adopt.AdoptedSuffix"),
             ProxySha256 = Sha256(proxyPath),
             IniSha256 = iniExists ? Sha256(iniPath) : "",
             RestoreFolder = "",
             Backups = new List<BackupItem>(),
         };
 
-        r.Note($"已接管 {proxy}" + (iniExists ? $" + {ModSource.IniName}" : "（未找到 INI）"));
-        r.Note("注意：接管记录里没有原始备份，因为文件是手工放入的。");
-        r.Message = $"已接管 {proxy}";
+        r.Note(Loc.T("Adopt.Done", proxy) + (iniExists ? $" + {ModSource.IniName}" : Loc.T("Adopt.NoIni")));
+        r.Note(Loc.T("Adopt.Note"));
+        r.Message = Loc.T("Adopt.Done", proxy);
         return r;
     }
 
@@ -719,10 +718,10 @@ public static class DeploymentService
     public static GameCheck Evaluate(GameEntry game)
     {
         if (string.IsNullOrWhiteSpace(game.RenderDir))
-            return new GameCheck(GameStatus.Unknown, "未设置渲染目录", null);
+            return new GameCheck(GameStatus.Unknown, Loc.T("Status.NoRenderDir"), null);
 
         if (!Directory.Exists(game.RenderDir))
-            return new GameCheck(GameStatus.Missing, "渲染目录不存在", null);
+            return new GameCheck(GameStatus.Missing, Loc.T("Status.RenderDirMissing"), null);
 
         // Drives the warning banner, so it is refreshed on every check.
         var protection = AntiCheat.Scan(game.RenderDir);
@@ -738,8 +737,7 @@ public static class DeploymentService
         if (liveProxies.Count > 1)
         {
             return new GameCheck(GameStatus.Modified,
-                $"发现 {liveProxies.Count} 个代理（{string.Join("、", liveProxies)}）。" +
-                "本项目只允许保留一个，多个同时存在会导致游戏崩溃。点「一键恢复」清理后重新部署。",
+                Loc.T("Status.MultipleProxies", liveProxies.Count, Loc.Join(liveProxies)),
                 protection);
         }
 
@@ -748,7 +746,7 @@ public static class DeploymentService
         {
             var found = FindInstalledProxy(root);
             return new GameCheck(GameStatus.NotDeployed,
-                found is null ? "未部署" : $"检测到手工安装的 {found}，可点「接管」纳入管理",
+                found is null ? Loc.T("Status.NotDeployedDetail") : Loc.T("Status.ManualInstall", found),
                 protection);
         }
 
@@ -764,9 +762,8 @@ public static class DeploymentService
             var quarantined = AntiCheat.FindQuarantinedCopies(root, prev.ProxyName, prev.ProxySha256);
 
             var detail = quarantined.Count > 0
-                ? $"{prev.ProxyName} 已被反作弊隔离（发现 {quarantined.Count} 个被改名的副本，" +
-                  $"{protection.Summary}）。点「一键恢复」可清理残留。"
-                : !proxyOk ? $"{prev.ProxyName} 不存在" : $"{ModSource.IniName} 不存在";
+                ? Loc.T("Status.Quarantined", prev.ProxyName, quarantined.Count, protection.Summary)
+                : !proxyOk ? Loc.T("Status.MissingProxy", prev.ProxyName) : Loc.T("Status.MissingIni", ModSource.IniName);
 
             return new GameCheck(GameStatus.Missing, detail, protection);
         }
@@ -780,12 +777,12 @@ public static class DeploymentService
                 ? new GameCheck(GameStatus.Deployed,
                     $"Mod {prev.ModVersion} · {prev.ProxyName} · {prev.DeployedAt}", protection)
                 : new GameCheck(GameStatus.Modified,
-                    proxyMatch ? "INI 已被修改（可能是你在游戏里改过配置）" : "代理 DLL 与部署记录不一致",
+                    proxyMatch ? Loc.T("Status.IniModified") : Loc.T("Status.ProxyMismatch"),
                     protection);
         }
         catch (Exception ex)
         {
-            return new GameCheck(GameStatus.Unknown, "校验失败：" + ex.Message, protection);
+            return new GameCheck(GameStatus.Unknown, Loc.T("Status.VerifyFailed", ex.Message), protection);
         }
     }
 

@@ -16,8 +16,21 @@ public partial class MainWindow : Window
     /// <summary>Keeps overlapping status refreshes from racing over the same game properties.</summary>
     private bool _statusRefreshRunning;
 
+    /// <summary>Prevents the language handler firing while the picker is being populated.</summary>
+    private bool _suppressLanguageChange;
+
+    /// <summary>
+    /// Last GPU probe result, kept so the advice line can be re-rendered after a language change.
+    /// The text is produced from code, so it does not follow the XAML bindings.
+    /// </summary>
+    private GpuInfo? _gpuInfo;
+
     public MainWindow()
     {
+        // The language must be applied before the first XAML string is resolved, otherwise the window
+        // renders in the default language and only switches a moment later.
+        Loc.SetLanguage(LibraryStore.Load().InterfaceLanguage);
+
         InitializeComponent();
 
         AppPaths.EnsureCreated();
@@ -25,20 +38,8 @@ public partial class MainWindow : Window
 
         _log = new OutputLog(OutputBox);
 
-        FrameCombo.ItemsSource = new[]
-        {
-            new Choice(1, "2X（最多额外 1 帧）"),
-            new Choice(2, "3X（最多额外 2 帧）"),
-            new Choice(3, "4X（最多额外 3 帧）"),
-        };
-
-        LogCombo.ItemsSource = new[]
-        {
-            new Choice(0, "0 · 关闭"),
-            new Choice(1, "1 · 仅错误"),
-            new Choice(2, "2 · 运行诊断"),
-            new Choice(3, "3 · 详细日志"),
-        };
+        BuildLocalizedCombos();
+        BuildLanguageCombo();
 
         // Bound straight to the persisted collection: no copy can drift out of sync with the file.
         GameList.ItemsSource = _data.Games;
@@ -49,17 +50,98 @@ public partial class MainWindow : Window
 
     private GameEntry? Selected => GameList.SelectedItem as GameEntry;
 
+    /// <summary>
+    /// Fills the numeric dropdowns from the string table. Called again after a language change, since
+    /// these items carry display text rather than a binding.
+    /// </summary>
+    private void BuildLocalizedCombos()
+    {
+        var frames = FrameCombo.SelectedValue;
+        FrameCombo.ItemsSource = new[]
+        {
+            new Choice(1, Loc.T("Detail.Frames2X")),
+            new Choice(2, Loc.T("Detail.Frames3X")),
+            new Choice(3, Loc.T("Detail.Frames4X")),
+        };
+        if (frames is not null) FrameCombo.SelectedValue = frames;
+
+        var level = LogCombo.SelectedValue;
+        LogCombo.ItemsSource = new[]
+        {
+            new Choice(0, Loc.T("Detail.Log0")),
+            new Choice(1, Loc.T("Detail.Log1")),
+            new Choice(2, Loc.T("Detail.Log2")),
+            new Choice(3, Loc.T("Detail.Log3")),
+        };
+        if (level is not null) LogCombo.SelectedValue = level;
+    }
+
+    /// <summary>Fills the language picker without triggering the change handler.</summary>
+    private void BuildLanguageCombo()
+    {
+        _suppressLanguageChange = true;
+        LanguageCombo.ItemsSource = Languages.All
+            .Select(code => new TextChoice(code, Languages.DisplayName(code)))
+            .ToList();
+        LanguageCombo.SelectedValuePath = "Value";
+        LanguageCombo.DisplayMemberPath = "Text";
+        LanguageCombo.SelectedValue = Loc.Current;
+        _suppressLanguageChange = false;
+    }
+
+    private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressLanguageChange) return;
+        if (LanguageCombo.SelectedItem is not TextChoice choice) return;
+
+        var language = choice.Value;
+
+        // WPF raises SelectionChanged again while the dropdown's item containers are realised, and
+        // that second event is not distinguishable from a user pick. Without this guard the handler
+        // would run again with the same value, and — because it used to act unconditionally — it also
+        // persisted the result, so a startup-time spurious event silently overwrote the saved
+        // language. Acting only on a genuine change makes repeated events harmless.
+        if (string.Equals(language, Loc.Current, StringComparison.Ordinal)) return;
+
+        Loc.SetLanguage(language);
+
+        // Text set from code does not follow the bindings, so it is re-applied here.
+        BuildLocalizedCombos();
+        RefreshCodeText();
+        RefreshModSource();
+        UpdateStatusCard();
+        RefreshAllStatus();
+
+        _data.InterfaceLanguage = language;
+        LibraryStore.Save(_data);
+    }
+
+    /// <summary>
+    /// Re-applies the interface text that is assigned from code rather than bound in XAML, so a
+    /// language change does not leave part of the window in the previous language.
+    /// </summary>
+    private void RefreshCodeText()
+    {
+        AdminButton.Content = Loc.T(Native.IsElevated() ? "Toolbar.AlreadyAdmin" : "Toolbar.RestartAdmin");
+
+        // The game rows bind to computed properties on GameEntry, which the language change cannot
+        // reach on its own — see RaiseLocalizedText.
+        foreach (var game in _data.Games) game.RaiseLocalizedText();
+
+        ApplyGpuText();
+    }
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        AdminButton.Content = Native.IsElevated() ? "已是管理员" : "以管理员身份重启";
         AdminButton.IsEnabled = !Native.IsElevated();
+        RefreshCodeText();
 
         RefreshModSource();
         RefreshAllStatus();
 
-        _log.Write($"数据目录：{AppPaths.Root}");
+        _log.Write(Loc.T("Status.DataDir", AppPaths.Root));
         if (!Native.IsElevated())
-            _log.Write("提示：游戏若装在 Program Files 下，写入需要管理员权限，可用右上角按钮重启。");
+            _log.Write(Loc.T("Status.NoPermissionHint"));
 
         ProbeGpuInBackground();
 
@@ -77,13 +159,9 @@ public partial class MainWindow : Window
         var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
 
         var body =
-            "本程序需要 dlssg_for_sm86 的文件（约 75 MB）才能部署到游戏，当前还没有获取。\n\n" +
-            "是否现在下载？程序会依次尝试多个源（GitHub 归档 / API / 原始文件，以及 jsDelivr 镜像），" +
-            "全部走 HTTPS，下载后会校验文件签名。\n\n" +
-            "将写入：\n" + target + "\n\n" +
-            "也可以稍后点工具条上的「下载 / 更新 Mod 文件」，或手动放置，详见 docs/mod-files.md。";
+            Loc.T("Fetch.FirstRunBody", target);
 
-        var answer = MessageBox.Show(this, body, "首次运行：获取 Mod 文件",
+        var answer = MessageBox.Show(this, body, Loc.T("Fetch.FirstRunTitle"),
             MessageBoxButton.YesNo, MessageBoxImage.Information, MessageBoxResult.Yes);
 
         if (answer == MessageBoxResult.Yes)
@@ -92,7 +170,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            _log.Write("已跳过自动下载。需要时点「下载 / 更新 Mod 文件」获取。");
+            _log.Write(Loc.T("Fetch.SkipLog"));
         }
     }
 
@@ -103,17 +181,33 @@ public partial class MainWindow : Window
         Task.Run(Gpu.Probe).ContinueWith(t =>
         {
             var info = t.Result;
+            _gpuInfo = info;
+
             _data.GpuName = info.Name;
             _data.GpuDriver = info.Driver;
             _data.RecommendedRouter = info.Router;
             LibraryStore.Save(_data);
 
-            GpuText.Text = string.IsNullOrWhiteSpace(info.Driver)
-                ? info.Name
-                : $"{info.Name}（驱动 {info.Driver}）";
-            RouterHintText.Text = info.Advice;
-            _log.Write($"显卡：{info.Name} · {info.Advice}");
+            ApplyGpuText();
+            _log.Write(Loc.T("Toolbar.Gpu") + " " + info.Name + " · " + info.Advice);
         }, ui);
+    }
+
+    /// <summary>
+    /// Renders the GPU lines. Called both when the probe finishes and after a language change, since
+    /// the advice text is built in code and would otherwise stay in the previous language.
+    /// </summary>
+    private void ApplyGpuText()
+    {
+        if (_gpuInfo is null) return;
+
+        GpuText.Text = string.IsNullOrWhiteSpace(_gpuInfo.Driver)
+            ? _gpuInfo.Name
+            : Loc.T("Gpu.NameWithDriver", _gpuInfo.Name, _gpuInfo.Driver);
+
+        // Regenerated rather than reused: the advice is assembled in code, so the stored string from
+        // the probe is in whatever language was active at probe time.
+        RouterHintText.Text = Gpu.AdviceFor(_gpuInfo);
     }
 
     // ---- mod source ---------------------------------------------------------
@@ -138,35 +232,32 @@ public partial class MainWindow : Window
             // Show where a download would land, and say plainly that files are missing.
             var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
             ModSourceText.Text = target;
-            ModSourceBadgeText.Text = "未就绪 · 请先获取 Mod 文件";
+            ModSourceBadgeText.Text = Loc.T("Toolbar.ModNotReady");
             ModSourceBadge.Background = Palette.Fill(Palette.Warn);
-            ModSourceText.ToolTip = "缺少 Mod 文件。点右侧「下载 / 更新 Mod 文件」自动获取，详见 docs/mod-files.md。";
-            _log.Write("Mod 文件源未就绪：尚未获取 mod 文件。点「下载 / 更新 Mod 文件」自动下载。");
+            ModSourceText.ToolTip = Loc.T("Toolbar.ModMissingTip");
+            _log.Write(Loc.T("Fetch.NotReadyLog"));
             return;
         }
 
         var source = new ModSource(existing);
         ModSourceText.Text = existing;
-        ModSourceBadgeText.Text = source.IsValid ? $"可用 · Native {source.Version}" : "文件不完整";
+        ModSourceBadgeText.Text = source.IsValid ? Loc.T("Toolbar.ModReady", source.Version) : Loc.T("Toolbar.ModIncomplete");
         ModSourceBadge.Background = Palette.Fill(source.IsValid ? Palette.Ok : Palette.Bad);
         ModSourceText.ToolTip = source.IsValid
-            ? "代理入口：" + string.Join("、", source.Proxies)
+            ? Loc.T("Toolbar.ModReadyTip", Loc.Join(source.Proxies))
             : source.ValidationMessage;
 
-        if (!source.IsValid) _log.Write("Mod 文件源不完整：" + source.ValidationMessage);
+        if (!source.IsValid) _log.Write(Loc.T("Fetch.IncompleteLog", source.ValidationMessage));
     }
 
     private void UpdateMod_Click(object sender, RoutedEventArgs e)
     {
-        if (_busy) { _log.Write("有操作正在进行，请稍候。"); return; }
+        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
         var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
         var answer = MessageBox.Show(this,
-            "将下载 dlssg_for_sm86 的文件并写入：\n\n" +
-            target + "\n\n" +
-            "程序会依次尝试多个下载源（GitHub 归档 / API / 原始文件，以及 jsDelivr 镜像），" +
-            "全部走 HTTPS，失败会自动切换源。下载后校验文件签名，通过后才落盘。\n\n继续吗？",
-            "更新 Mod 文件", MessageBoxButton.OKCancel, MessageBoxImage.Information);
+            Loc.T("Fetch.Confirm", target),
+            Loc.T("Fetch.ConfirmTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Information);
         if (answer != MessageBoxResult.OK) return;
 
         DownloadModFiles(target, update: true);
@@ -178,10 +269,10 @@ public partial class MainWindow : Window
     /// </summary>
     private void DownloadModFiles(string target, bool update)
     {
-        if (_busy) { _log.Write("有操作正在进行，请稍候。"); return; }
+        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
         _busy = true;
-        _log.Write(update ? "— 从 GitHub 更新 Mod 文件" : "— 首次获取 Mod 文件");
+        _log.Write(update ? Loc.T("Fetch.StartLog") : Loc.T("Fetch.StartLogFirst"));
 
         var progress = UiProgress();
 
@@ -200,9 +291,9 @@ public partial class MainWindow : Window
                 {
                     MessageBox.Show(this,
                         result.Message + (update
-                            ? "\n\n如果 Mod 有新的配置项，可在各游戏的配置面板里重新部署以写入。"
-                            : "\n\n接下来点「扫描 Steam 库」或「添加游戏…」就能开始部署了。"),
-                        update ? "更新完成" : "获取完成",
+                            ? Loc.T("Fetch.DoneBody", result.Message)
+                            : Loc.T("Fetch.DoneBodyFirst", result.Message)),
+                        update ? Loc.T("Fetch.DoneTitle") : Loc.T("Fetch.DoneTitleFirst"),
                         MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }, TaskScheduler.FromCurrentSynchronizationContext());
@@ -247,31 +338,31 @@ public partial class MainWindow : Window
         // than merely warned about. Restore stays available to clean up a deployment made earlier.
         DeployButton.IsEnabled = !game.HasKernelAntiCheat;
         DeployButton.ToolTip = game.HasKernelAntiCheat
-            ? "该游戏带有内核级反作弊，本 Mod 无法在其上生效"
+            ? Loc.T("Deploy.BlockedTooltip")
             : null;
     }
 
     private static string StatusDetailText(GameEntry game)
     {
         if (game.Deployment is null)
-            return "部署后本管理器会记录文件指纹，恢复时只删除确认属于本项目的文件；被占用的原文件会先备份。";
+            return Loc.T("Status.DeployHint");
 
         var parts = new List<string>
         {
-            "入口 " + game.Deployment.ProxyName,
+            game.Deployment.ProxyName,
             "Mod " + game.Deployment.ModVersion,
-            "部署于 " + game.Deployment.DeployedAt,
+            game.Deployment.DeployedAt,
         };
 
         if (game.Deployment.Backups.Count > 0)
-            parts.Add($"已备份 {game.Deployment.Backups.Count} 个原文件");
+            parts.Add(Loc.T("Detail.BackupCount", game.Deployment.Backups.Count));
 
         return string.Join(" · ", parts);
     }
 
     private void AddGame_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "选择游戏文件夹（包含游戏主程序的目录）" };
+        var dialog = new OpenFolderDialog { Title = Loc.T("List.AddFolderTitle") };
         if (!string.IsNullOrWhiteSpace(_data.LastScanRoot) && Directory.Exists(_data.LastScanRoot))
             dialog.InitialDirectory = _data.LastScanRoot;
         if (dialog.ShowDialog() != true) return;
@@ -288,7 +379,7 @@ public partial class MainWindow : Window
 
         _data.Games.Add(game);
         GameList.SelectedItem = game;
-        _log.Write($"— 添加游戏：{folder}");
+        _log.Write(Loc.T("List.AddedMessage", folder));
 
         // AttachFolder fills in the render directory, runs the anti-cheat scan and warns if needed.
         AttachFolder(game, folder);
@@ -299,11 +390,11 @@ public partial class MainWindow : Window
         var game = Selected;
         if (game is null) return;
 
-        var body = $"从列表移除「{game.Name}」？";
+        var body = Loc.T("List.RemoveConfirm", game.Name);
         if (game.Deployment is not null)
-            body += "\n\n注意：该游戏仍处于部署状态。移除条目不会删除游戏目录里的文件；请先执行「一键恢复」。";
+            body += Loc.T("List.RemoveWarnDeployed");
 
-        if (MessageBox.Show(body, "移除", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+        if (MessageBox.Show(body, Loc.T("List.RemoveTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
 
         _data.Games.Remove(game);
@@ -322,7 +413,7 @@ public partial class MainWindow : Window
         DeploymentService.Apply(game, check);
 
         UpdateStatusCard();
-        _log.Write($"检查 {game.Name}：{game.StatusText} — {game.StatusDetail}");
+        _log.Write(Loc.T("Status.CheckResult", game.Name, game.StatusText, game.StatusDetail));
     }
 
     private void RefreshAll_Click(object sender, RoutedEventArgs e) => RefreshAllStatus();
@@ -356,7 +447,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            _log.Write("刷新状态失败：" + ex.Message);
+            _log.Write(Loc.T("Status.RefreshFailed", ex.Message));
         }
         finally
         {

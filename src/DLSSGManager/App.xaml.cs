@@ -64,8 +64,8 @@ public partial class App : Application
 
             AppPaths.Log($"[fetch] 失败: {result.Message}");
             if (!silent)
-                MessageBox.Show("获取 Mod 文件失败：\n\n" + result.Message + "\n\n可稍后在界面上重试。",
-                    "DLSSG 30 系管理器", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Error.FetchFailed", result.Message),
+                    Loc.T("Error.UnhandledTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
 
             return 1;
         }
@@ -73,8 +73,8 @@ public partial class App : Application
         {
             AppPaths.Log("[fetch] 异常: " + ex);
             if (!silent)
-                MessageBox.Show("获取 Mod 文件时出错：\n\n" + ex.Message,
-                    "DLSSG 30 系管理器", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Error.FetchException", ex.Message),
+                    Loc.T("Error.UnhandledTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
 
             return 2;
         }
@@ -84,8 +84,8 @@ public partial class App : Application
     {
         AppPaths.Log("界面异常: " + e.Exception);
         MessageBox.Show(
-            "操作过程中出现未处理的错误：\n\n" + e.Exception.Message + "\n\n详细信息已写入日志。",
-            "DLSSG 30 系管理器", MessageBoxButton.OK, MessageBoxImage.Error);
+            Loc.T("Error.Unhandled", e.Exception.Message),
+            Loc.T("Error.UnhandledTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
     }
 }

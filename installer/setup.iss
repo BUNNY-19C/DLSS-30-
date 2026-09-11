@@ -68,10 +68,13 @@ DisableWelcomePage=no
 AllowNoIcons=yes
 
 [Languages]
-; 简体中文语言文件随仓库提供，因为 Inno Setup 安装包未内置它。
+; 英语用 Inno Setup 内置的 Default.isl；简体中文语言文件随仓库提供，因为安装包未内置它。
+; 向导启动时会显示语言选择框（ShowLanguageDialog=auto：多语言时自动显示）。
+Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "chinese"; MessagesFile: "languages\ChineseSimplified.isl"
 
 [CustomMessages]
+; ── 简体中文 ──────────────────────────────────────────────────────
 chinese.CreateDesktopIcon=创建桌面快捷方式
 chinese.LaunchAfterInstall=安装完成后启动
 chinese.DataDirNote=Mod 文件（约 75 MB）将放在程序目录下的 mod\ 文件夹。%n若该位置不可写（例如安装到 Program Files 且未以管理员运行），会自动改放到：%n%1
@@ -80,7 +83,18 @@ chinese.FetchModFiles=安装时下载 Mod 文件到程序目录（约 75 MB，�
 chinese.FetchPageTitle=正在获取 Mod 文件
 chinese.FetchPageSubTitle=从 GitHub 下载 dlssg_for_sm86，请稍候
 chinese.FetchPageText=下载并解压中，约 75 MB，通常需要一到两分钟…
-chinese.FetchFailed=Mod 文件未能下载成功。%n%n程序仍可使用，首次启动时会再次提示，也可以稍后点「从 GitHub 更新 Mod 文件」重试。
+chinese.FetchFailed=Mod 文件未能下载成功。%n%n程序仍可使用，首次启动时会再次提示，也可以稍后点「下载 / 更新 Mod 文件」重试。
+
+; ── English ───────────────────────────────────────────────────────
+english.CreateDesktopIcon=Create a desktop shortcut
+english.LaunchAfterInstall=Launch after installation
+english.DataDirNote=Mod files (about 75 MB) go into a mod\ folder beside the program.%nIf that location is not writable (for example, installed under Program Files without elevation), they are placed in:%n%1
+english.ModFilesGroup=Mod files
+english.FetchModFiles=Download the mod files into the program folder during setup (about 75 MB, needs a network connection)
+english.FetchPageTitle=Downloading mod files
+english.FetchPageSubTitle=Fetching dlssg_for_sm86 from GitHub, please wait
+english.FetchPageText=Downloading and extracting, about 75 MB. This usually takes one to two minutes…
+english.FetchFailed=The mod files could not be downloaded.%n%nThe program still works: it will offer to retry on first start, and you can also use “Download / update mod files” later.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

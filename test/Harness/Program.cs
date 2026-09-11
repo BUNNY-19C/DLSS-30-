@@ -63,6 +63,7 @@ public static class Program
             TestModSource(modRoot);
             TestIniRendering(modRoot);
             TestGpuProbe();
+            TestLocalization();
             TestDeployRestore(modRoot, work);
             TestForeignFileProtection(modRoot, work);
             TestProxyOccupation(modRoot, work);
@@ -382,6 +383,135 @@ public static class Program
         var clamped = IniTemplate.Render(template, new GameProfile { MaxGeneratedFrames = 99, LogLevel = -5 });
         Check("倍率上限被夹取到 3", clamped.Contains("MaxGeneratedFrames=3"));
         Check("日志级别被夹取到 0", clamped.Contains("Level=0"));
+    }
+
+    private static void TestLocalization()
+    {
+        Section("界面多语言");
+
+        // Both tables must define the same keys. A key present in only one language shows the raw key
+        // (or the wrong language) in the interface, so this is the primary guard.
+        var (onlyZh, onlyEn) = Strings.MissingKeys();
+        Check("两种语言的键完全一致",
+            onlyZh.Count == 0 && onlyEn.Count == 0,
+            $"仅中文 {onlyZh.Count} 个、仅英文 {onlyEn.Count} 个" +
+            (onlyZh.Count > 0 ? "；仅中文: " + string.Join(",", onlyZh.Take(5)) : "") +
+            (onlyEn.Count > 0 ? "；仅英文: " + string.Join(",", onlyEn.Take(5)) : ""));
+
+        Console.WriteLine($"      键总数: {Strings.AllKeys.Count()}");
+
+        // Placeholder mismatch means string.Format throws or silently drops a value in one language.
+        var placeholderIssues = LocalizationAudit.PlaceholderMismatches();
+        Check("两种语言的占位符一致",
+            placeholderIssues.Count == 0,
+            placeholderIssues.Count > 0 ? string.Join(" | ", placeholderIssues.Take(3)) : "");
+
+        // Every key used in code or XAML must exist in the tables.
+        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var undefined = LocalizationAudit.UndefinedKeysUsed(LocalizationAudit.SourceFiles(repoRoot));
+        Check("代码中引用的键都已定义",
+            undefined.Count == 0,
+            undefined.Count > 0 ? "未定义: " + string.Join(", ", undefined.Take(8)) : "");
+
+        // Every defined key must resolve to a non-empty string in both languages, and no key may leak
+        // through as its own name (which is what Loc.T returns for a missing entry).
+        var emptyOrRaw = new List<string>();
+        foreach (var language in Languages.All)
+        {
+            Loc.SetLanguage(language);
+            foreach (var key in Strings.AllKeys)
+            {
+                var text = Loc.T(key);
+                if (string.IsNullOrWhiteSpace(text)) emptyOrRaw.Add($"{language}:{key}(空)");
+            }
+        }
+        Check("所有键在两种语言下都有文本", emptyOrRaw.Count == 0,
+            emptyOrRaw.Count > 0 ? string.Join(", ", emptyOrRaw.Take(5)) : "");
+
+        // Language normalisation: accept the common spellings, fall back safely on nonsense.
+        Check("zh-Hans 归一化为简体中文", Languages.Normalize("zh-Hans") == Languages.ChineseSimplified);
+        Check("zh-CN 归一化为简体中文", Languages.Normalize("zh-CN") == Languages.ChineseSimplified);
+        Check("en 归一化为英文", Languages.Normalize("en") == Languages.English);
+        Check("en-US 归一化为英文", Languages.Normalize("en-US") == Languages.English);
+        Check("EN 大小写不敏感", Languages.Normalize("EN") == Languages.English);
+        Check("空值回落默认语言", Languages.Normalize("") == Languages.ChineseSimplified);
+        Check("null 回落默认语言", Languages.Normalize(null) == Languages.ChineseSimplified);
+        Check("无法识别的语言回落默认", Languages.Normalize("klingon") == Languages.ChineseSimplified);
+        Check("语言显示名：中文", Languages.DisplayName("zh-Hans") == "简体中文");
+        Check("语言显示名：英文", Languages.DisplayName("en") == "English");
+
+        // Switching language must change what lookups return; this is the mechanism the UI relies on.
+        Loc.SetLanguage(Languages.ChineseSimplified);
+        var zh = Loc.T("Action.Deploy");
+        Loc.SetLanguage(Languages.English);
+        var en = Loc.T("Action.Deploy");
+
+        Check("切换语言后取到不同文本", zh != en, $"{zh} / {en}");
+        Check("中文表返回中文", zh.Contains('部'), zh);
+        Check("英文表返回英文", en.Contains("Deploy", StringComparison.OrdinalIgnoreCase), en);
+        Check("当前语言已更新", Loc.Current == Languages.English, Loc.Current);
+
+        // Formatted lookups must substitute in both languages.
+        Loc.SetLanguage(Languages.ChineseSimplified);
+        var zhFmt = Loc.T("Deploy.Success", "TestGame");
+        Loc.SetLanguage(Languages.English);
+        var enFmt = Loc.T("Deploy.Success", "TestGame");
+        Check("中文格式化含参数", zhFmt.Contains("TestGame"), zhFmt);
+        Check("英文格式化含参数", enFmt.Contains("TestGame"), enFmt);
+        Check("格式化结果随语言变化", zhFmt != enFmt, $"{zhFmt} / {enFmt}");
+
+        // A missing key must degrade to the key itself rather than throwing or blanking the UI. The
+        // name is assembled at runtime so the source audit does not flag it as an undefined lookup.
+        var absentKey = "No" + ".Such" + ".Key";
+        Check("缺失键返回键名而非异常", Loc.T(absentKey) == absentKey);
+
+        // Placeholder-count mismatch is handled without crashing.
+        Check("占位符数量不匹配不抛异常", Loc.T("Deploy.Success").Length > 0);
+
+        // The game-name quoting differs by language, which is why it is a key rather than a format
+        // string embedded in code.
+        Loc.SetLanguage(Languages.ChineseSimplified);
+        var zhQuoted = Loc.T("Anti.QuotedName", "Game");
+        Loc.SetLanguage(Languages.English);
+        var enQuoted = Loc.T("Anti.QuotedName", "Game");
+        Check("中文用直角引号", zhQuoted.Contains('「'), zhQuoted);
+        Check("英文用弯引号", enQuoted.Contains('“'), enQuoted);
+
+        // Restore the default so later sections see a predictable language.
+        Loc.SetLanguage(Languages.ChineseSimplified);
+
+        // Computed properties on GameEntry read from the string table. A language change cannot reach
+        // them through the XAML binding — the binding watches the game object, not Loc — so the model
+        // re-raises them explicitly. Without that, the game list kept showing the old language while
+        // the rest of the window switched, which is exactly what happened in the field.
+        var entry = new GameEntry { Name = "Test", RenderDir = @"C:\fake" };
+
+        Loc.SetLanguage(Languages.ChineseSimplified);
+        var zhStatus = entry.StatusText;
+        var zhSubtitle = entry.Subtitle;
+
+        var notified = new List<string>();
+        entry.PropertyChanged += (_, e) => { if (e.PropertyName is not null) notified.Add(e.PropertyName); };
+
+        Loc.SetLanguage(Languages.English);
+        entry.RaiseLocalizedText();
+
+        Check("语言变更后通知了 StatusText", notified.Contains("StatusText"), string.Join(",", notified));
+        Check("语言变更后通知了 Subtitle", notified.Contains("Subtitle"));
+        Check("语言变更后通知了 AntiCheatBody", notified.Contains("AntiCheatBody"));
+
+        var enStatus = entry.StatusText;
+        Check("状态文案随语言变化", zhStatus != enStatus, $"{zhStatus} / {enStatus}");
+
+        Loc.SetLanguage(Languages.ChineseSimplified);
+        Check("切回中文后恢复中文文案", entry.StatusText == zhStatus, entry.StatusText);
+        Check("路径类字段不随语言变化", entry.Subtitle == zhSubtitle, entry.Subtitle);
+
+        // The stored proxy value must not be localised: it is persisted to library.json, so
+        // translating it would invalidate existing configuration.
+        Check("代理入口的存储值保持中文常量", entry.PreferredProxy == "自动", entry.PreferredProxy);
+        Check("代理入口的存储值与语言无关",
+            DeploymentService.AutoProxy == "自动", DeploymentService.AutoProxy);
     }
 
     private static void TestGpuProbe()

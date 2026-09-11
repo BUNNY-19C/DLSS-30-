@@ -25,20 +25,20 @@ public static class PathGuard
 
         if (string.IsNullOrWhiteSpace(path))
         {
-            reason = "路径为空";
+            reason = Loc.T("Path.Empty");
             return false;
         }
 
         if (path.Length > MaxPathLength)
         {
-            reason = "路径过长";
+            reason = Loc.T("Path.TooLong");
             return false;
         }
 
         // Leading/trailing whitespace usually means a quoting mistake upstream.
         if (!string.Equals(path, path.Trim(), StringComparison.Ordinal))
         {
-            reason = "路径首尾有空白字符";
+            reason = Loc.T("Path.Whitespace");
             return false;
         }
 
@@ -48,20 +48,20 @@ public static class PathGuard
         {
             if (char.IsControl(c))
             {
-                reason = "路径含控制字符";
+                reason = Loc.T("Path.ControlChar");
                 return false;
             }
 
             if (c == '"')
             {
-                reason = "路径含引号";
+                reason = Loc.T("Path.Quote");
                 return false;
             }
         }
 
         if (!Path.IsPathFullyQualified(path))
         {
-            reason = "路径不是绝对路径";
+            reason = Loc.T("Path.NotAbsolute");
             return false;
         }
 
@@ -73,13 +73,13 @@ public static class PathGuard
         }
         catch (Exception ex)
         {
-            reason = "路径无效：" + ex.Message;
+            reason = Loc.T("Path.Invalid", ex.Message);
             return false;
         }
 
         if (!Directory.Exists(full) && !File.Exists(full))
         {
-            reason = "路径不存在";
+            reason = Loc.T("Path.Missing");
             return false;
         }
 
@@ -93,13 +93,13 @@ public static class PathGuard
 
         if (!File.Exists(path))
         {
-            reason = "不是文件";
+            reason = Loc.T("Path.NotFile");
             return false;
         }
 
         if (!string.Equals(Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase))
         {
-            reason = "不是可执行文件";
+            reason = Loc.T("Path.NotExecutable");
             return false;
         }
 

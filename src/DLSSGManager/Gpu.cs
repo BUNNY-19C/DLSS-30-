@@ -222,6 +222,21 @@ public static class Gpu
     public static string AdviceForAdapter(string adapterName, string driver) =>
         BuildAdvice(adapterName, driver, FamilyFromName(adapterName), false, null);
 
+    /// <summary>
+    /// Rebuilds the advice text for an already-probed adapter.
+    ///
+    /// The text is produced from code, so it does not follow the interface language on its own.
+    /// Re-rendering after a language change needs the same inputs the probe had, which the record
+    /// carries.
+    /// </summary>
+    public static string AdviceFor(GpuInfo info) =>
+        BuildAdvice(
+            info.Name,
+            info.Driver,
+            info.HardwareFamily ?? FamilyFromName(info.Name),
+            info.NameMismatchesHardware,
+            info.PciDeviceId);
+
     public static GpuInfo Probe()
     {
         var adapters = Adapters();
@@ -233,12 +248,12 @@ public static class Gpu
         if (nvidia is null)
         {
             return new GpuInfo(
-                adapters.Count > 0 ? string.Join(" / ", adapters.Select(a => a.Name)) : "未检测到 NVIDIA 显卡",
+                adapters.Count > 0 ? string.Join(" / ", adapters.Select(a => a.Name)) : Loc.T("Gpu.NotFound"),
                 "",
                 "SM86",
                 adapters.Count == 0
-                    ? "未能枚举显示适配器。本 Mod 需要 NVIDIA 驱动提供的 NGX/NVAPI/CUDA 接口。"
-                    : "未检测到 NVIDIA 显卡。本 Mod 需要 NVIDIA 驱动提供的 NGX/NVAPI/CUDA 接口。");
+                    ? Loc.T("Gpu.NoAdapter")
+                    : Loc.T("Gpu.NotFoundAdvice"));
         }
 
         var driver = DriverVersion(nvidia.Name, nvidia.DeviceId);
@@ -260,7 +275,7 @@ public static class Gpu
     {
         var parts = new List<string>
         {
-            driver.Length > 0 ? $"驱动 {driver}" : "驱动版本未知",
+            driver.Length > 0 ? Loc.T("Gpu.Driver", driver) : Loc.T("Gpu.DriverUnknown"),
         };
 
         if (mismatch)
@@ -268,25 +283,22 @@ public static class Gpu
             var actual = FamilyFromDeviceId(deviceId);
             var series = actual switch
             {
-                "Ampere" => "（RTX 30 系）",
-                "Turing" => "（RTX 20 系）",
-                "Ada" => "（RTX 40 系）",
-                "Blackwell" => "（RTX 50 系）",
+                "Ampere" => Loc.T("Gpu.SeriesAmpere"),
+                "Turing" => Loc.T("Gpu.SeriesTuring"),
+                "Ada" => Loc.T("Gpu.SeriesAda"),
+                "Blackwell" => Loc.T("Gpu.SeriesBlackwell"),
                 _ => "",
             };
 
-            parts.Add(
-                $"⚠ 显卡名称与硬件 ID 不符：名称显示「{name}」，但硬件 ID {deviceId} 属于 {actual} 架构{series}。" +
-                "名称可能被工具修改过，这会误导驱动与游戏的功能判断。" +
-                $"已按硬件 ID 判定为 {actual}，路由取 {RouteForFamily(actual)}；建议恢复显卡名称后重试。");
+            parts.Add(Loc.T("Gpu.Mismatch", name, deviceId, actual, series, RouteForFamily(actual)));
         }
 
         parts.Add(family switch
         {
-            "Ada" or "Blackwell" => "该架构原生支持 DLSS 帧生成，通常不需要本 Mod。",
-            "Ampere" => "与本机匹配：SM86 路由即作者实卡验证的路径。",
-            "Turing" => "Turing 请用 SM75 路由；作者仅在 3080 Ti 上做过 PTX 前向检查。",
-            _ => "未识别的型号，请自行确认路由。",
+            "Ada" or "Blackwell" => Loc.T("Gpu.AdviceAda"),
+            "Ampere" => Loc.T("Gpu.AdviceAmpere"),
+            "Turing" => Loc.T("Gpu.AdviceTuring"),
+            _ => Loc.T("Gpu.AdviceUnknown"),
         });
 
         return string.Join(" ", parts);

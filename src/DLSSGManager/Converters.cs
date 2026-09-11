@@ -28,8 +28,17 @@ public sealed class NotEmptyToVisibility : IValueConverter
         throw new NotSupportedException();
 }
 
-/// <summary>A combo entry carrying a numeric value plus the label shown in the dropdown.</summary>
+/// <summary>A combo entry pairing a stable value with the label shown in the dropdown.</summary>
 public sealed record Choice(int Value, string Text)
+{
+    public override string ToString() => Text;
+}
+
+/// <summary>
+/// The same pairing for string values, used by the language picker where the value is a language code
+/// rather than a number. Kept separate so the numeric combos keep their compile-time type.
+/// </summary>
+public sealed record TextChoice(string Value, string Text)
 {
     public override string ToString() => Text;
 }

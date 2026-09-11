@@ -173,9 +173,7 @@ public sealed class GameEntry : Observable
 
     [JsonIgnore]
     public string AntiCheatBody => Protection?.HasKernelAntiCheat == true
-        ? "内核级反作弊会在游戏启动前拦截并隔离代理 DLL，本 Mod 在这款游戏上无法生效，且检测记录可能危及账号。"
-          + "建议改用游戏自带的帧生成选项（该游戏目录里有 nvngx_dlssg.dll，说明游戏本身支持）。"
-          + "「一键恢复」可清理已被隔离的残留文件。"
+        ? Loc.T("Anti.BannerBody")
         : "";
 
     [JsonIgnore] public GameStatus Status { get => _status; set { if (Set(ref _status, value)) { Raise(nameof(StatusText)); Raise(nameof(StatusColor)); } } }
@@ -185,11 +183,11 @@ public sealed class GameEntry : Observable
     [JsonIgnore]
     public string StatusText => Status switch
     {
-        GameStatus.Deployed => "已部署",
-        GameStatus.Modified => "已被改动",
-        GameStatus.Missing => "文件缺失",
-        GameStatus.NotDeployed => "未部署",
-        _ => "未检查",
+        GameStatus.Deployed => Loc.T("Status.Deployed"),
+        GameStatus.Modified => Loc.T("Status.Modified"),
+        GameStatus.Missing => Loc.T("Status.Missing"),
+        GameStatus.NotDeployed => Loc.T("Status.NotDeployed"),
+        _ => Loc.T("Status.NotChecked"),
     };
 
     [JsonIgnore]
@@ -202,11 +200,29 @@ public sealed class GameEntry : Observable
         _ => "#9AA0A6",
     };
 
-    [JsonIgnore] public string Subtitle => string.IsNullOrWhiteSpace(RenderDir) ? "(未设置路径)" : RenderDir;
+    [JsonIgnore] public string Subtitle => string.IsNullOrWhiteSpace(RenderDir) ? Loc.T("Detail.NoPath") : RenderDir;
 
-    [JsonIgnore] public string DeploymentSummary => Deployment is null
-        ? "未部署"
+    [JsonIgnore]
+    public string DeploymentSummary => Deployment is null
+        ? Loc.T("Status.NotDeployedDetail")
         : $"{Deployment.ProxyName} · Mod {Deployment.ModVersion} · {Deployment.DeployedAt}";
+
+    /// <summary>
+    /// Re-raises the change notifications for properties whose text is produced from the string table.
+    ///
+    /// These are computed properties, so a language change does not reach them: the XAML binding for
+    /// <see cref="StatusText"/> watches this object, not <see cref="Loc"/>, and would keep showing the
+    /// text from the previous language. Called for every game when the language changes.
+    /// </summary>
+    public void RaiseLocalizedText()
+    {
+        Raise(nameof(StatusText));
+        Raise(nameof(StatusDetail));
+        Raise(nameof(Subtitle));
+        Raise(nameof(DeploymentSummary));
+        Raise(nameof(AntiCheatTitle));
+        Raise(nameof(AntiCheatBody));
+    }
 }
 
 /// <summary>Everything persisted to %APPDATA%\DLSSGManager\library.json.</summary>
@@ -220,6 +236,9 @@ public sealed class AppData
 
     public string ModSourcePath { get; set; } = "";
     public string LastScanRoot { get; set; } = "";
+
+    /// <summary>Interface language code; see <see cref="Languages"/>.</summary>
+    public string InterfaceLanguage { get; set; } = Languages.ChineseSimplified;
     /// <summary>Detected GPU name, cached so the UI shows something before the probe finishes.</summary>
     public string GpuName { get; set; } = "";
     public string GpuDriver { get; set; } = "";

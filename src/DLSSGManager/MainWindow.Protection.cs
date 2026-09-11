@@ -23,12 +23,12 @@ public partial class MainWindow
         var (renderDir, exe) = Detection.ResolveRenderDir(folder);
 
         if (!string.Equals(Path.GetFullPath(renderDir), Path.GetFullPath(folder), StringComparison.OrdinalIgnoreCase))
-            _log.Write($"  该目录不是渲染目录，已定位到 {renderDir}");
+            _log.Write(Loc.T("Detail.LocatedNotRenderDir", renderDir));
 
         game.RenderDir = renderDir;
         if (exe is not null) game.ExePath = exe;
 
-        if (string.IsNullOrWhiteSpace(game.Name) || game.Name == "新游戏")
+        if (string.IsNullOrWhiteSpace(game.Name) || game.Name == Loc.T("List.NewGame"))
         {
             var friendly = Detection.FriendlyName(renderDir);
             if (!string.IsNullOrWhiteSpace(friendly)) game.Name = friendly;
@@ -54,11 +54,11 @@ public partial class MainWindow
         if (!protection.HasKernelAntiCheat) return false;
 
         var name = string.IsNullOrWhiteSpace(game.Name) ? Detection.FriendlyName(game.RenderDir) : game.Name;
-        _log.Write($"⚠ {name}：{protection.Summary}（{protection.Evidence}）");
+        _log.Write(Loc.T("Anti.ProtectedLog", name, protection.Summary, protection.Evidence));
 
         MessageBox.Show(this,
             AntiCheat.BuildUnsupportedNotice(name, protection),
-            "该游戏无法使用本 Mod",
+            Loc.T("Anti.BlockTitle"),
             MessageBoxButton.OK,
             MessageBoxImage.Warning);
 
@@ -74,17 +74,12 @@ public partial class MainWindow
         var blocked = newlyAdded.Where(g => g.HasKernelAntiCheat).ToList();
         if (blocked.Count == 0) return;
 
-        var lines = blocked.Select(g => $"· {g.Name} — {g.Protection!.Products}");
-        var body =
-            $"新增的 {blocked.Count} 款游戏带有内核级反作弊，本 Mod 无法在这些游戏上生效：\n\n" +
-            string.Join("\n", lines) +
-            "\n\n它们会被标记为不可部署；如果游戏自带帧生成，请直接在游戏内开启。\n" +
-            "在列表里选中任一游戏可以看到详细信息。";
+        var lines = string.Join("\n", blocked.Select(g => $"· {g.Name} — {g.Protection!.Products}"));
+        var body = Loc.T("Anti.BatchBody", blocked.Count, lines);
 
-        _log.Write($"⚠ 新增游戏中 {blocked.Count} 款带有内核级反作弊：" +
-                   string.Join("、", blocked.Select(g => g.Name)));
+        _log.Write(Loc.T("Anti.BatchLog", blocked.Count, string.Join("、", blocked.Select(g => g.Name))));
 
-        MessageBox.Show(this, body, "有游戏无法使用本 Mod",
+        MessageBox.Show(this, body, Loc.T("Anti.BatchTitle"),
             MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 }

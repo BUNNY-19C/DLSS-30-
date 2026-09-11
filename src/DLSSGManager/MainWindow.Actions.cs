@@ -17,7 +17,7 @@ public partial class MainWindow
 
         if (string.IsNullOrWhiteSpace(game.RenderDir) || !Directory.Exists(game.RenderDir))
         {
-            _log.Write("✗ 请先设置有效的渲染目录。");
+            _log.Write("✗ " + Loc.T("Deploy.NeedDir"));
             return;
         }
 
@@ -26,7 +26,7 @@ public partial class MainWindow
 
     private void RunDeploy(GameEntry game)
     {
-        if (_busy) { _log.Write("有操作正在进行，请稍候。"); return; }
+        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
         var allowProtected = false;
         var protection = AntiCheat.Scan(game.RenderDir);
@@ -34,31 +34,24 @@ public partial class MainWindow
 
         if (protection.HasKernelAntiCheat)
         {
-            var body =
-                $"「{game.Name}」带有内核级反作弊：{protection.Products}\n\n" +
-                $"证据：{protection.Evidence}\n\n" +
-                "这类反作弊会在游戏启动前拦截并隔离代理 DLL，所以：\n" +
-                "· 本 Mod 在这款游戏上无法生效；\n" +
-                "· 检测记录可能危及账号安全。\n\n" +
-                "该游戏目录里有 nvngx_dlssg.dll，说明游戏自带帧生成，建议直接用它。\n\n" +
-                "确定仍要部署吗？（不推荐）";
+            var body = Loc.T("Anti.OverrideBody", game.Name, protection.Products, protection.Evidence);
 
-            var answer = MessageBox.Show(body, "检测到内核级反作弊", MessageBoxButton.YesNo,
+            var answer = MessageBox.Show(body, Loc.T("Anti.OverrideTitle"), MessageBoxButton.YesNo,
                 MessageBoxImage.Warning, MessageBoxResult.No);
             if (answer != MessageBoxResult.Yes)
             {
-                _log.Write($"已取消部署 {game.Name}：{protection.Summary}（{protection.Evidence}）");
+                _log.Write(Loc.T("Anti.CancelLog", game.Name, protection.Summary, protection.Evidence));
                 return;
             }
 
             allowProtected = true;
-            _log.Write($"⚠ 用户确认在受保护游戏上部署：{game.Name} — {protection.Summary}");
+            _log.Write(Loc.T("Anti.OverrideLog", game.Name, protection.Summary));
         }
 
         _busy = true;
         try
         {
-            _log.Write($"— 部署 {game.Name}");
+            _log.Write(Loc.T("Deploy.Starting", game.Name));
             _log.Write("  " + game.RenderDir);
 
             var result = DeploymentService.Deploy(game, CurrentSource(), allowProtected);
@@ -76,7 +69,7 @@ public partial class MainWindow
 
     /// <summary>
     /// Re-reads the game from disk and repaints its row. Without the re-check the list would keep
-    /// showing the status from before the operation ("文件缺失" after a successful restore, etc.).
+    /// showing the status from before the operation (Loc.T("Status.Missing") after a successful restore, etc.).
     /// </summary>
     private void FinishGameAction(GameEntry game)
     {
@@ -92,9 +85,8 @@ public partial class MainWindow
 
         if (game.Deployment is null)
         {
-            var body = $"「{game.Name}」没有部署记录。\n\n" +
-                       "将扫描该目录，只删除签名属于本项目的文件（若有）。继续吗？";
-            if (MessageBox.Show(body, "确认恢复", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+            var body = Loc.T("Restore.NoRecord", game.Name);
+            if (MessageBox.Show(body, Loc.T("Restore.NoRecordTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
                 return;
         }
 
@@ -103,12 +95,12 @@ public partial class MainWindow
 
     private void RunRestore(GameEntry game)
     {
-        if (_busy) { _log.Write("有操作正在进行，请稍候。"); return; }
+        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
         _busy = true;
         try
         {
-            _log.Write($"— 恢复 {game.Name}");
+            _log.Write(Loc.T("Restore.Starting", game.Name));
             var result = DeploymentService.Restore(game, RemoveLogsCheck.IsChecked == true);
             _log.Details(result.Lines);
             _log.Result(result.Ok, result.Message);
@@ -126,9 +118,8 @@ public partial class MainWindow
         var game = Selected;
         if (game is null) return;
 
-        var body = "接管会把当前目录里已存在的本项目 DLL 登记为「由本管理器安装」。\n\n" +
-                   "适用于你之前手工复制过 Mod 的情况。接管记录不含原始备份，之后恢复只能删除本项目的文件。\n\n继续吗？";
-        if (MessageBox.Show(body, "接管手工安装", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK)
+        var body = Loc.T("Adopt.Confirm");
+        if (MessageBox.Show(body, Loc.T("Adopt.ConfirmTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK)
             return;
 
         _busy = true;
@@ -154,28 +145,27 @@ public partial class MainWindow
             .Where(g => !string.IsNullOrWhiteSpace(g.RenderDir) && Directory.Exists(g.RenderDir))
             .ToList();
 
-        if (targets.Count == 0) { _log.Write("没有可部署的游戏。"); return; }
+        if (targets.Count == 0) { _log.Write(Loc.T("Batch.NothingToDeploy")); return; }
 
         var protectedGames = targets.Where(g => g.HasKernelAntiCheat).ToList();
         var eligible = targets.Count - protectedGames.Count;
 
-        var body = $"将为 {targets.Count} 款游戏部署本项目：\n\n" +
-                   string.Join("\n", targets.Select(t => "· " + t.Name)) +
-                   "\n\n游戏必须处于完全退出状态。继续吗？";
+        var body = Loc.T("Batch.DeployConfirm", targets.Count,
+            string.Join("\n", targets.Select(t => "· " + t.Name)));
 
         if (protectedGames.Count > 0)
         {
-            body = $"将为 {eligible} 款游戏部署本项目：\n\n" +
-                   string.Join("\n", targets.Where(t => !t.HasKernelAntiCheat).Select(t => "· " + t.Name)) +
-                   $"\n\n以下 {protectedGames.Count} 款带有内核级反作弊，将被跳过：\n" +
-                   string.Join("\n", protectedGames.Select(t => $"· {t.Name} — {t.Protection!.Products}")) +
-                   "\n\n游戏必须处于完全退出状态。继续吗？";
+            body = Loc.T("Batch.DeployConfirmWithSkipped",
+                eligible,
+                string.Join("\n", targets.Where(t => !t.HasKernelAntiCheat).Select(t => "· " + t.Name)),
+                protectedGames.Count,
+                string.Join("\n", protectedGames.Select(t => $"· {t.Name} — {t.Protection!.Products}")));
         }
 
-        if (MessageBox.Show(body, "全部部署", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+        if (MessageBox.Show(body, Loc.T("Batch.DeployTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
 
-        _log.Write($"— 批量部署 {targets.Count} 款游戏");
+        _log.Write(Loc.T("Batch.DeployStart", targets.Count));
         var ok = 0;
         var blocked = 0;
         var source = CurrentSource();
@@ -199,9 +189,9 @@ public partial class MainWindow
             _busy = false;
         }
 
-        _log.Write($"批量部署完成：成功 {ok} / {targets.Count}" +
-                   (blocked > 0 ? $"，{blocked} 款因内核级反作弊被跳过" : ""));
-        BatchStatusText.Text = $"上次批量部署：成功 {ok} / {targets.Count}";
+        _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Deploy"), ok, targets.Count) +
+                   (blocked > 0 ? Loc.T("Batch.ResultSkipped", blocked) : ""));
+        BatchStatusText.Text = Loc.T("Batch.LastDeploy", ok, targets.Count);
         LibraryStore.Save(_data);
         RefreshAllStatus();
     }
@@ -212,15 +202,14 @@ public partial class MainWindow
             .Where(g => g.Deployment is not null && !string.IsNullOrWhiteSpace(g.RenderDir) && Directory.Exists(g.RenderDir))
             .ToList();
 
-        if (targets.Count == 0) { _log.Write("没有已部署的游戏。"); return; }
+        if (targets.Count == 0) { _log.Write(Loc.T("Batch.NothingToRestore")); return; }
 
-        var body = $"将从 {targets.Count} 款游戏中移除本项目文件：\n\n" +
-                   string.Join("\n", targets.Select(t => "· " + t.Name)) +
-                   "\n\n只删除确认属于本项目的文件，被占用的原文件会还原。继续吗？";
-        if (MessageBox.Show(body, "全部恢复", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+        var body = Loc.T("Batch.RestoreConfirm", targets.Count,
+            string.Join("\n", targets.Select(t => "· " + t.Name)));
+        if (MessageBox.Show(body, Loc.T("Batch.RestoreTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
             return;
 
-        _log.Write($"— 批量恢复 {targets.Count} 款游戏");
+        _log.Write(Loc.T("Batch.RestoreStart", targets.Count));
         var ok = 0;
         var removeLogs = RemoveLogsCheck.IsChecked == true;
 
@@ -240,8 +229,8 @@ public partial class MainWindow
             _busy = false;
         }
 
-        _log.Write($"批量恢复完成：成功 {ok} / {targets.Count}");
-        BatchStatusText.Text = $"上次批量恢复：成功 {ok} / {targets.Count}";
+        _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Restore"), ok, targets.Count));
+        BatchStatusText.Text = Loc.T("Batch.LastRestore", ok, targets.Count);
         LibraryStore.Save(_data);
         RefreshAllStatus();
     }
@@ -251,12 +240,12 @@ public partial class MainWindow
     private void ScanSteam_Click(object sender, RoutedEventArgs e)
     {
         var progress = UiProgress();
-        StartScan("Steam 库", token => Detection.ScanSteam(progress, token));
+        StartScan(Loc.T("Scan.SteamLabel"), token => Detection.ScanSteam(progress, token));
     }
 
     private void ScanFolder_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "选择要扫描的文件夹（例如某个游戏盘）" };
+        var dialog = new OpenFolderDialog { Title = Loc.T("Scan.FolderTitle") };
         if (!string.IsNullOrWhiteSpace(_data.LastScanRoot) && Directory.Exists(_data.LastScanRoot))
             dialog.InitialDirectory = _data.LastScanRoot;
 
@@ -284,11 +273,11 @@ public partial class MainWindow
 
     private void StartScan(string label, Func<CancellationToken, List<GameCandidate>> scan)
     {
-        if (_busy) { _log.Write("有操作正在进行，请稍候。"); return; }
+        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
         _busy = true;
         _scanCts = new CancellationTokenSource();
-        _log.Write($"— 开始扫描：{label}");
+        _log.Write(Loc.T("Scan.Start", label));
 
         var token = _scanCts.Token;
         Task.Run(() =>
@@ -308,7 +297,7 @@ public partial class MainWindow
             BatchStatusText.Text = "";
 
             var found = t.Result;
-            if (found is null) { _log.Write("扫描已取消或失败。"); return; }
+            if (found is null) { _log.Write(Loc.T("Scan.Cancelled")); return; }
             MergeCandidates(found);
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
@@ -347,7 +336,7 @@ public partial class MainWindow
         }
 
         LibraryStore.Save(_data);
-        _log.Write($"扫描完成：发现 {found.Count} 个候选，新增 {added} 款。");
+        _log.Write(Loc.T("Scan.Done", found.Count, added));
 
         // Land on something useful instead of leaving the detail pane empty after a scan.
         if (GameList.SelectedItem is null && _data.Games.Count > 0)
@@ -364,7 +353,7 @@ public partial class MainWindow
         var game = Selected;
         if (game is null) return;
 
-        var dialog = new OpenFolderDialog { Title = "选择包含游戏渲染 EXE 的目录" };
+        var dialog = new OpenFolderDialog { Title = Loc.T("Detail.BrowseDirTitle") };
         if (!string.IsNullOrWhiteSpace(game.RenderDir) && Directory.Exists(game.RenderDir))
             dialog.InitialDirectory = game.RenderDir;
 
@@ -382,19 +371,19 @@ public partial class MainWindow
         var root = game.RenderDir;
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
         {
-            _log.Write("请先「浏览…」选一个存在的目录，再自动定位。");
+            _log.Write(Loc.T("Detail.DetectNeedFolder"));
             return;
         }
 
-        _log.Write($"— 在 {root} 中查找渲染目录");
+        _log.Write(Loc.T("Detail.DetectSearching", root));
         var hit = Detection.FindRenderTarget(root);
         if (hit is null)
         {
-            _log.Write("未找到 nvngx_dlssg.dll。该游戏可能不支持 DLSS 帧生成。");
+            _log.Write(Loc.T("Detail.DetectNoMarker"));
             return;
         }
 
-        _log.Write($"已定位：{hit.RenderDir}");
+        _log.Write(Loc.T("Detail.LocatedMessage", hit.RenderDir));
         AttachFolder(game, root);
     }
 
@@ -403,7 +392,7 @@ public partial class MainWindow
         var game = Selected;
         if (game is null) return;
 
-        var dialog = new OpenFileDialog { Title = "选择游戏主程序", Filter = "可执行文件 (*.exe)|*.exe" };
+        var dialog = new OpenFileDialog { Title = Loc.T("Detail.BrowseExeTitle"), Filter = Loc.T("Detail.ExeFilter") };
         if (!string.IsNullOrWhiteSpace(game.ExePath) && File.Exists(game.ExePath))
             dialog.InitialDirectory = Path.GetDirectoryName(game.ExePath);
 
@@ -418,7 +407,7 @@ public partial class MainWindow
     private void OpenRenderDir_Click(object sender, RoutedEventArgs e)
     {
         var dir = Selected?.RenderDir;
-        if (!Shell.OpenFolder(dir)) _log.Write("目录不存在或无法打开。");
+        if (!Shell.OpenFolder(dir)) _log.Write(Loc.T("Error.DirOpenFailed"));
     }
 
     private void Launch_Click(object sender, RoutedEventArgs e)
@@ -427,9 +416,9 @@ public partial class MainWindow
         if (game is null) return;
 
         if (Shell.LaunchExecutable(game.ExePath))
-            _log.Write("已启动 " + Path.GetFileName(game.ExePath));
+            _log.Write(Loc.T("Error.Launched", Path.GetFileName(game.ExePath)));
         else
-            _log.Write("启动失败：请先设置有效的启动程序路径。");
+            _log.Write(Loc.T("Error.LaunchFailed"));
     }
 
     private void OpenModLog_Click(object sender, RoutedEventArgs e)
@@ -441,7 +430,7 @@ public partial class MainWindow
         if (latest is not null)
         {
             Shell.OpenDocument(latest);
-            _log.Write("已打开最新日志：" + Path.GetFileName(latest));
+            _log.Write(Loc.T("Error.LogOpened", Path.GetFileName(latest)));
             return;
         }
 
@@ -452,13 +441,13 @@ public partial class MainWindow
             return;
         }
 
-        _log.Write("还没有 Mod 日志。把该游戏的日志级别设为 2，启动游戏后即可生成。");
+        _log.Write(Loc.T("Error.NoModLog"));
     }
 
     private void OpenDataDir_Click(object sender, RoutedEventArgs e)
     {
         AppPaths.EnsureCreated();
-        if (!Shell.OpenFolder(AppPaths.Root)) _log.Write("无法打开数据目录：" + AppPaths.Root);
+        if (!Shell.OpenFolder(AppPaths.Root)) _log.Write(Loc.T("Error.CannotOpenDataDir", AppPaths.Root));
     }
 
     private void ClearLog_Click(object sender, RoutedEventArgs e) => _log.Clear();
@@ -470,6 +459,6 @@ public partial class MainWindow
         if (Shell.RelaunchElevated())
             Application.Current.Shutdown();
         else
-            _log.Write("提权被取消或失败。也可以右键 exe 选择「以管理员身份运行」。");
+            _log.Write(Loc.T("Error.ElevationCancelled"));
     }
 }

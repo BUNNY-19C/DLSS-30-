@@ -14,7 +14,11 @@ public enum ProtectionLevel
     Kernel,
 }
 
-public sealed record ProtectionFinding(string Product, string Evidence, bool Kernel);
+public sealed record ProtectionFinding(string ProductKey, string Evidence, bool Kernel)
+{
+    /// <summary>Vendor name in the current interface language.</summary>
+    public string Product => Loc.T(ProductKey);
+}
 
 public sealed class ProtectionReport
 {
@@ -26,20 +30,23 @@ public sealed class ProtectionReport
     public bool IsProtected => Level != ProtectionLevel.None;
     public bool HasKernelAntiCheat => Level == ProtectionLevel.Kernel;
 
-    public string Products => string.Join("、", Findings.Select(f => f.Product).Distinct());
+    /// <summary>Separator between product names; uses the comma style of the active language.</summary>
+    private static string ListSeparator => Loc.Current == Languages.English ? ", " : "、";
 
-    public string Evidence => string.Join("、", Findings.Select(f => f.Evidence));
+    public string Products => string.Join(ListSeparator, Findings.Select(f => f.Product).Distinct());
+
+    public string Evidence => string.Join(ListSeparator, Findings.Select(f => f.Evidence));
 
     public string Summary
     {
         get
         {
-            if (ScanFailed) return "反作弊检测未能完成（目录不可读）";
-            if (!IsProtected) return "未检测到反作弊组件";
+            if (ScanFailed) return Loc.T("Anti.ScanFailed");
+            if (!IsProtected) return Loc.T("Anti.LevelNone");
 
             return HasKernelAntiCheat
-                ? $"检测到内核级反作弊：{Products}"
-                : $"检测到反作弊：{Products}";
+                ? Loc.T("Anti.LevelKernel", Products)
+                : Loc.T("Anti.LevelUser", Products);
         }
     }
 }
@@ -59,41 +66,45 @@ public static class AntiCheat
     /// <summary>
     /// A named anti-cheat component.
     ///
+    /// <paramref name="ProductKey"/> is a lookup key rather than display text, so the vendor name
+    /// follows the interface language (these are proper nouns, so most translations differ only in the
+    /// vendor's own spelling — "米哈游" vs "miHoYo").
+    ///
     /// <paramref name="Patterns"/> are matched against both files AND directories: Tencent ACE ships a
     /// bare <c>AntiCheatExpert\</c> folder in the game root, which a file-only check never sees.
     /// </summary>
-    private sealed record Signature(string Product, string[] Patterns, bool Kernel);
+    private sealed record Signature(string ProductKey, string[] Patterns, bool Kernel);
 
     private static readonly Signature[] Signatures =
     {
-        new("米哈游 HoYoKProtect",
+        new("Anti.Hoyo",
             new[] { "HoYoKProtect.sys", "mhypbase.dll", "mhyprot*.sys", "mhyprot*.dll" }, true),
 
-        new("腾讯 ACE",
+        new("Anti.Tencent",
             new[]
             {
                 "ACE-BASE.sys", "ACE-GAME.sys", "ACE-ADVT.sys", "ACE-CORE*.sys", "ACE-BOOT.sys",
                 "ACE-Service64.exe", "ACE-Setup64.exe", "ACE-Base64.dll", "ACE-CSI64.dll",
-                "AntiCheatExpert*", "SGuard*.sys", "SGuard64.exe", "SGuardSvc*.exe", "SGuardSvc*.exe",
+                "AntiCheatExpert*", "SGuard*.sys", "SGuard64.exe", "SGuardSvc*.exe",
             }, true),
 
         // NetEase's anti-cheat (Overwatch's Chinese client, Naraka, etc.).
-        new("网易 NEAC",
+        new("Anti.Neac",
             new[] { "NeacSafe*.sys", "NeacInterface.dll", "NeacLoader.exe", "NeacClient.exe", "OWNeacClient.exe", "Neac*.sys" }, true),
 
-        new("Easy Anti-Cheat",
+        new("Anti.Eac",
             new[] { "EasyAntiCheat*.sys", "EasyAntiCheat.exe", "EasyAntiCheat_EOS*.sys", "EasyAntiCheat*.dll", "start_protected_game.exe" }, true),
 
-        new("BattlEye",
+        new("Anti.BattlEye",
             new[] { "BEService*.exe", "BEClient*.dll", "BattlEye*.sys", "BEService*" }, true),
 
-        new("nProtect GameGuard",
+        new("Anti.GameGuard",
             new[] { "GameGuard.des", "npgg*.des", "npggNT*.des", "nProtect*.sys", "GameMon.des" }, true),
 
-        new("Riot Vanguard",
+        new("Anti.Vanguard",
             new[] { "vgk.sys", "vgc.exe", "vgk*.sys" }, true),
 
-        new("XIGNCODE3",
+        new("Anti.Xigncode",
             new[] { "x3.xem", "xigncode*", "XIGNCODE*" }, true),
     };
 
@@ -185,9 +196,9 @@ public static class AntiCheat
                     .FirstOrDefault();
 
                 if (hit is null) continue;
-                if (!seen.Add(signature.Product + "|" + hit)) continue;
+                if (!seen.Add(signature.ProductKey + "|" + hit)) continue;
 
-                findings.Add(new ProtectionFinding(signature.Product, hit, signature.Kernel));
+                findings.Add(new ProtectionFinding(signature.ProductKey, hit, signature.Kernel));
             }
         }
 
@@ -202,7 +213,7 @@ public static class AntiCheat
             .FirstOrDefault();
 
         if (driver is not null && seen.Add("kernel-driver|" + driver))
-            findings.Add(new ProtectionFinding("内核驱动（未识别厂商）", driver, Kernel: true));
+            findings.Add(new ProtectionFinding("Anti.UnknownDriver", driver, Kernel: true));
     }
 
     /// <summary>Case-insensitive wildcard match over a single file or folder name.</summary>
@@ -219,23 +230,17 @@ public static class AntiCheat
     /// Explains why the mod cannot be used on a game, for the prompt shown when the game is added or
     /// when a deploy is attempted anyway. Kept here rather than in the window so the wording is
     /// covered by tests.
+    ///
+    /// The game name is quoted with the punctuation of the active language, so the sentence reads
+    /// naturally in both.
     /// </summary>
     public static string BuildUnsupportedNotice(string gameName, ProtectionReport report)
     {
-        var name = string.IsNullOrWhiteSpace(gameName) ? "该游戏" : $"「{gameName}」";
+        var name = string.IsNullOrWhiteSpace(gameName)
+            ? Loc.T("Anti.ThisGame")
+            : Loc.T("Anti.QuotedName", gameName);
 
-        var sb = new StringBuilder();
-        sb.AppendLine($"{name}带有内核级反作弊：{report.Products}");
-        sb.AppendLine();
-        sb.AppendLine($"证据：{report.Evidence}");
-        sb.AppendLine();
-        sb.AppendLine("这类反作弊会在游戏启动前扫描游戏目录，拦截并隔离代理 DLL，所以：");
-        sb.AppendLine("· 本 Mod 在这款游戏上无法生效，游戏可能还会报错；");
-        sb.AppendLine("· 检测记录可能危及账号安全。");
-        sb.AppendLine();
-        sb.AppendLine("本管理器已禁止向该游戏部署。如果游戏自带帧生成（目录里有 nvngx_dlssg.dll 就说明支持），");
-        sb.Append("请直接在游戏内开启。");
-        return sb.ToString();
+        return Loc.T("Anti.BlockBody", name, report.Products, report.Evidence);
     }
 
     /// <summary>
