@@ -3,5 +3,17 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
+        <ResourceDictionary>
+            <!--
+                主题字典。这里放的是默认（深色）主题；启动时 App.OnStartup 会按用户
+                保存的偏好替换它。
+
+                窗口和对话框都必须用 DynamicResource 引用这里的键——StaticResource
+                在元素创建时解析一次，替换字典后不会重新查表，界面会停在旧配色上。
+            -->
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Dark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

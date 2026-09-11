@@ -19,6 +19,15 @@ public partial class MainWindow : Window
     /// <summary>Prevents the language handler firing while the picker is being populated.</summary>
     private bool _suppressLanguageChange;
 
+    /// <summary>Same, for the theme picker.</summary>
+    private bool _suppressThemeChange;
+
+    /// <summary>
+    /// Whether the mod file source is usable, or null when nothing has been fetched yet. Kept so the
+    /// badge colours can be re-applied after a theme switch, since they are set from code.
+    /// </summary>
+    private bool? _modSourceValid;
+
     /// <summary>
     /// Last GPU probe result, kept so the advice line can be re-rendered after a language change.
     /// The text is produced from code, so it does not follow the XAML bindings.
@@ -27,19 +36,22 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
-        // The language must be applied before the first XAML string is resolved, otherwise the window
-        // renders in the default language and only switches a moment later.
-        Loc.SetLanguage(LibraryStore.Load().InterfaceLanguage);
+        // Loaded once and reused: the language has to be applied before the first XAML string is
+        // resolved (otherwise the window renders in the default language and switches a moment later),
+        // and the rest of the setup needs the same data.
+        _data = LibraryStore.Load();
+
+        Loc.SetLanguage(_data.InterfaceLanguage);
+        Theme.Apply(_data.InterfaceTheme);
 
         InitializeComponent();
 
         AppPaths.EnsureCreated();
-        _data = LibraryStore.Load();
-
         _log = new OutputLog(OutputBox);
 
         BuildLocalizedCombos();
         BuildLanguageCombo();
+        BuildThemeCombo();
 
         // Bound straight to the persisted collection: no copy can drift out of sync with the file.
         GameList.ItemsSource = _data.Games;
@@ -87,6 +99,61 @@ public partial class MainWindow : Window
         LanguageCombo.DisplayMemberPath = "Text";
         LanguageCombo.SelectedValue = Loc.Current;
         _suppressLanguageChange = false;
+    }
+
+    /// <summary>Fills the theme picker without triggering the change handler.</summary>
+    private void BuildThemeCombo()
+    {
+        _suppressThemeChange = true;
+        ThemeCombo.ItemsSource = new[]
+        {
+            new TextChoice(ThemeKeys.StorageValue(AppTheme.Dark), Loc.T("Theme.Dark")),
+            new TextChoice(ThemeKeys.StorageValue(AppTheme.Light), Loc.T("Theme.Light")),
+        };
+        ThemeCombo.SelectedValuePath = "Value";
+        ThemeCombo.DisplayMemberPath = "Text";
+        ThemeCombo.SelectedValue = ThemeKeys.StorageValue(Theme.Current);
+        _suppressThemeChange = false;
+    }
+
+    private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressThemeChange) return;
+        if (ThemeCombo.SelectedItem is not TextChoice choice) return;
+
+        var wanted = ThemeKeys.Parse(choice.Value);
+        if (wanted == Theme.Current) return;
+
+        Theme.Apply(wanted);
+        ColorFromCode();
+
+        _data.InterfaceTheme = ThemeKeys.StorageValue(wanted);
+        LibraryStore.Save(_data);
+    }
+
+    /// <summary>
+    /// Re-applies the colours that are assigned from code. These sit outside the DynamicResource
+    /// mechanism, so a theme switch would otherwise leave the mod-source badge and status heading in
+    /// the previous theme's colours.
+    /// </summary>
+    private void ColorFromCode()
+    {
+        var badgeKey = _modSourceValid switch
+        {
+            true => Palette.BadgeOk,
+            false => ThemeKeys.DangerBackground,
+            null => Palette.BadgeWarn,
+        };
+
+        ModSourceBadge.Background = Theme.Brush(badgeKey);
+        ModSourceBadgeText.Foreground = Theme.Brush(_modSourceValid switch
+        {
+            true => "BadgeOkText",
+            false => "DangerText",
+            null => "BadgeWarnText",
+        });
+
+        UpdateStatusCard();
     }
 
     private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -233,7 +300,8 @@ public partial class MainWindow : Window
             var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
             ModSourceText.Text = target;
             ModSourceBadgeText.Text = Loc.T("Toolbar.ModNotReady");
-            ModSourceBadge.Background = Palette.Fill(Palette.Warn);
+            _modSourceValid = null;
+            ColorFromCode();
             ModSourceText.ToolTip = Loc.T("Toolbar.ModMissingTip");
             _log.Write(Loc.T("Fetch.NotReadyLog"));
             return;
@@ -242,7 +310,8 @@ public partial class MainWindow : Window
         var source = new ModSource(existing);
         ModSourceText.Text = existing;
         ModSourceBadgeText.Text = source.IsValid ? Loc.T("Toolbar.ModReady", source.Version) : Loc.T("Toolbar.ModIncomplete");
-        ModSourceBadge.Background = Palette.Fill(source.IsValid ? Palette.Ok : Palette.Bad);
+        _modSourceValid = source.IsValid;
+        ColorFromCode();
         ModSourceText.ToolTip = source.IsValid
             ? Loc.T("Toolbar.ModReadyTip", Loc.Join(source.Proxies))
             : source.ValidationMessage;
@@ -330,7 +399,7 @@ public partial class MainWindow : Window
         if (game is null) return;
 
         StatusTitle.Text = game.StatusText + " — " + game.StatusDetail;
-        StatusTitle.Foreground = Palette.Fill(game.StatusColor);
+        StatusTitle.Foreground = Theme.Brush(game.StatusColor);
         StatusBody.Text = StatusDetailText(game);
 
         var deployed = game.Deployment is not null;

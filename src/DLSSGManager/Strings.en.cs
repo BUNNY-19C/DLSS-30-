@@ -38,6 +38,9 @@ public static partial class Strings
         ["Toolbar.ModReadyTip"] = "Proxy entries: {0}",
         ["Toolbar.ModMissingTip"] = "Mod files are missing. Use “Download / update mod files” to fetch them, or see docs/mod-files.md.",
         ["Toolbar.Language"] = "Language",
+        ["Toolbar.Theme"] = "Theme",
+        ["Theme.Dark"] = "Dark",
+        ["Theme.Light"] = "Light",
 
         // ── Game list ────────────────────────────────────────────────
         ["List.Title"] = "Games",

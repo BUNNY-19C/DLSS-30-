@@ -38,6 +38,9 @@ public static partial class Strings
         ["Toolbar.ModReadyTip"] = "代理入口：{0}",
         ["Toolbar.ModMissingTip"] = "缺少 Mod 文件。点右侧「下载 / 更新 Mod 文件」自动获取，详见 docs/mod-files.md。",
         ["Toolbar.Language"] = "语言",
+        ["Toolbar.Theme"] = "主题",
+        ["Theme.Dark"] = "深色",
+        ["Theme.Light"] = "浅色",
 
         // ── 游戏列表 ─────────────────────────────────────────────────
         ["List.Title"] = "游戏列表",

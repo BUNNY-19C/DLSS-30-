@@ -38,7 +38,7 @@ The mod is a DLL proxy: placing `version.dll` (or one of the alternative entry n
 - [About GPUs](#about-gpus)
 - [Updating the mod files](#updating-the-mod-files)
 - [Repository layout](#repository-layout)
-- [Localisation](#localisation)
+- [Theme and localisation](#theme-and-localisation)
 - [Building from source](#building-from-source)
 - [License](#license)
 
@@ -100,10 +100,11 @@ You need the .NET 8 SDK; see [Building from source](#building-from-source). The 
 
 ## Interface
 
-The toolbar shows the current mod file source and your GPU. Top right has three controls:
+The toolbar shows the current mod file source and your GPU. Top right has four controls:
 
 - **Restart as administrator** — needed when the game lives under `C:\Program Files`, where writing requires elevation. Restarts through a UAC prompt.
 - **Open data folder** — opens `%APPDATA%\DLSSGManager`, which holds the configuration and backups.
+- **Theme** — switches the interface between dark and light, applied immediately and remembered.
 - **Language** — switches the interface between Simplified Chinese and English, applied immediately and remembered.
 
 Every field in the detail panel maps directly onto the mod's INI keys (see the author's [INI documentation](https://github.com/sdli1995/dlssg_for_sm86/blob/main/docs/NATIVE_INI.md)):
@@ -289,9 +290,13 @@ Runtime data:
 
 ---
 
-## Localisation
+## Theme and localisation
 
-The interface supports **Simplified Chinese** and **English**, switched from the right end of the toolbar. The change applies immediately and is remembered (stored as `InterfaceLanguage` in `library.json`). The installer wizard also asks for its language first.
+**Theme**: dark and light palettes, switched from the right end of the toolbar, applied immediately and remembered (`InterfaceTheme` in `library.json`). Both live under `src/DLSSGManager/Themes/` and the interface references them through `DynamicResource` — dynamic is required, because a static reference is resolved when the element is created and most of the window would stay in the old colours after a switch.
+
+The light theme is not an inversion of the dark one; the values are chosen again, because a green or orange that reads well on a dark background is too light on white. A test checks that both themes define the same keys and validates the contrast of each text/background pair (7:1 for body text, 4.5:1 for secondary), and another check ensures no interface file or code path hard-codes a colour — a control that misses theming keeps the old palette after a switch, which is easy to overlook by eye.
+
+**Localisation**: Simplified Chinese and English, switched from the right end of the toolbar, applied immediately and remembered. The installer wizard also asks for its language first.
 
 Both tables live in `src/DLSSGManager/Strings.*.cs` and must define exactly the same keys — a test compares them, so a missing translation fails the build rather than surfacing a raw key in the interface. Placeholder consistency (`{0}`) is checked the same way, so arguments cannot end up in the wrong order in one language.
 
@@ -333,7 +338,7 @@ The result is `dist/DLSSGManager-<version>-setup.exe`. The design decisions in t
 
 Releases are built automatically by GitHub Actions: pushing a `v*` tag (for example `git tag v1.4.0 && git push origin v1.4.0`) builds, tests, compiles the installer and creates a Release with both executables and `SHA256SUMS.txt`. The workflow can also be triggered manually from the Actions tab.
 
-Testing (290 cases covering deployment and restore, backup protection, anti-cheat detection and blocking, path validation, INI rendering, persistence, download URL policy, signature verification and localisation):
+Testing (328 cases covering deployment and restore, backup protection, anti-cheat detection and blocking, path validation, INI rendering, persistence, download URL policy, signature verification, source selection, theming and localisation):
 
 ```bash
 cd test/Harness

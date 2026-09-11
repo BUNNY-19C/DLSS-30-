@@ -1,6 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace DLSSGManager;
 
@@ -76,6 +77,7 @@ public static class Program
             TestPersistence(work);
             TestUrlPolicy();
             TestSourceSelection();
+            TestThemes();
             TestSignatureVerification(modRoot, work);
         }
         catch (Exception ex)
@@ -1338,6 +1340,210 @@ public static class Program
     /// The download-source picker depends on these contracts: stable ids (never localised), a note for
     /// every source, and a distinction between official endpoints and mirrors.
     /// </summary>
+    /// <summary>
+    /// The two theme dictionaries must define exactly the same keys. A key present in only one theme
+    /// throws at switch time — the failure appears when the user clicks the toggle, not at build time,
+    /// so it has to be caught here.
+    /// </summary>
+    private static void TestThemes()
+    {
+        Section("界面主题");
+
+        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var darkPath = Path.Combine(repoRoot, "src", "DLSSGManager", "Themes", "Dark.xaml");
+        var lightPath = Path.Combine(repoRoot, "src", "DLSSGManager", "Themes", "Light.xaml");
+
+        if (!File.Exists(darkPath) || !File.Exists(lightPath))
+        {
+            Check("主题文件存在", false, $"缺少 {(File.Exists(darkPath) ? lightPath : darkPath)}");
+            return;
+        }
+
+        var dark = ThemeKeysIn(darkPath);
+        var light = ThemeKeysIn(lightPath);
+
+        Console.WriteLine($"      深色主题键: {dark.Count}   浅色主题键: {light.Count}");
+
+        var onlyDark = dark.Except(light).OrderBy(k => k, StringComparer.Ordinal).ToList();
+        var onlyLight = light.Except(dark).OrderBy(k => k, StringComparer.Ordinal).ToList();
+
+        Check("两个主题的键完全一致",
+            onlyDark.Count == 0 && onlyLight.Count == 0,
+            (onlyDark.Count > 0 ? "仅深色: " + string.Join(",", onlyDark) : "") +
+            (onlyLight.Count > 0 ? " 仅浅色: " + string.Join(",", onlyLight) : ""));
+
+        // Every key named in ThemeKeys must actually exist in both dictionaries, or code that resolves
+        // a key would get nothing back and silently render transparent.
+        var declared = new HashSet<string>(ThemeKeys.All, StringComparer.Ordinal);
+        var missingInDark = declared.Except(dark).OrderBy(k => k, StringComparer.Ordinal).ToList();
+        var missingInLight = declared.Except(light).OrderBy(k => k, StringComparer.Ordinal).ToList();
+
+        Check("ThemeKeys 声明的键都在深色主题里", missingInDark.Count == 0, string.Join(",", missingInDark));
+        Check("ThemeKeys 声明的键都在浅色主题里", missingInLight.Count == 0, string.Join(",", missingInLight));
+
+        // The themes must differ overall, but individual keys may legitimately share a value: white
+        // text on a blue button is correct in both, and the transparency-neutral entries are the same.
+        // So the check is on the proportion of differing keys, not on every key.
+        var darkColors = ThemeColorValues(darkPath);
+        var lightColors = ThemeColorValues(lightPath);
+        var shared = darkColors.Count(kv => lightColors.TryGetValue(kv.Key, out var c) && c == kv.Value);
+        var total = Math.Min(darkColors.Count, lightColors.Count);
+
+        Console.WriteLine($"      色值相同的键: {shared}/{total}"
+                          + (shared > 0 ? "（" + string.Join(",", darkColors.Where(kv => lightColors.TryGetValue(kv.Key, out var c) && c == kv.Value).Select(kv => kv.Key)) + "）" : ""));
+
+        Check("两个主题整体上有区别",
+            total > 0 && shared < total / 2,
+            $"{shared}/{total} 个键的色值相同");
+
+        // Sanity: each theme should be broadly consistent with its name rather than inverted by mistake.
+        Check("深色主题的窗口底色偏暗",
+            IsDark(darkColors.GetValueOrDefault(ThemeKeys.WindowBackground, "")),
+            darkColors.GetValueOrDefault(ThemeKeys.WindowBackground, "(无)"));
+        Check("浅色主题的窗口底色偏亮",
+            !IsDark(lightColors.GetValueOrDefault(ThemeKeys.WindowBackground, "")),
+            lightColors.GetValueOrDefault(ThemeKeys.WindowBackground, "(无)"));
+        Check("深色主题的正文色偏亮",
+            !IsDark(darkColors.GetValueOrDefault(ThemeKeys.TextPrimary, "")),
+            darkColors.GetValueOrDefault(ThemeKeys.TextPrimary, "(无)"));
+        Check("浅色主题的正文色偏暗",
+            IsDark(lightColors.GetValueOrDefault(ThemeKeys.TextPrimary, "")),
+            lightColors.GetValueOrDefault(ThemeKeys.TextPrimary, "(无)"));
+
+        // Contrast is what actually matters for readability, and re-picking colours for a light theme
+        // is exactly when it gets overlooked. Pairs are (foreground, background, minimum ratio).
+        var pairs = new (string Fg, string Bg, double Min, string What)[]
+        {
+            (ThemeKeys.TextPrimary, ThemeKeys.WindowBackground, 7.0, "正文/窗口"),
+            (ThemeKeys.TextPrimary, ThemeKeys.CardBackground, 7.0, "正文/卡片"),
+            (ThemeKeys.TextMuted, ThemeKeys.WindowBackground, 4.5, "次要文字/窗口"),
+            (ThemeKeys.TextSection, ThemeKeys.PanelBackground, 4.5, "节标题/面板"),
+            (ThemeKeys.TextOnLog, ThemeKeys.LogBackground, 7.0, "日志文字/日志底"),
+            (ThemeKeys.WarnBannerTitle, ThemeKeys.WarnBannerBackground, 4.5, "警告标题/警告底"),
+            (ThemeKeys.WarnBannerBody, ThemeKeys.WarnBannerBackground, 4.5, "警告正文/警告底"),
+            (ThemeKeys.BadgeOkText, ThemeKeys.BadgeOkBackground, 4.5, "徽章文字/徽章底"),
+            (ThemeKeys.BadgeWarnText, ThemeKeys.BadgeWarnBackground, 4.5, "警告徽章文字/徽章底"),
+            (ThemeKeys.OnPrimaryText, ThemeKeys.PrimaryBackground, 4.5, "主按钮文字/主按钮底"),
+            (ThemeKeys.DangerText, ThemeKeys.DangerBackground, 4.5, "危险按钮文字/按钮底"),
+        };
+
+        foreach (var theme in new[] { "Dark", "Light" })
+        {
+            var colors = theme == "Dark" ? darkColors : lightColors;
+            var failures = new List<string>();
+
+            foreach (var (fg, bg, min, what) in pairs)
+            {
+                var f = colors.GetValueOrDefault(fg);
+                var b = colors.GetValueOrDefault(bg);
+                if (f is null || b is null) continue;
+
+                var ratio = ContrastRatio(f, b);
+                if (ratio < min) failures.Add($"{what} {ratio:F1}<{min}");
+            }
+
+            Check($"{theme} 主题的文字对比度达标",
+                failures.Count == 0,
+                failures.Count > 0 ? string.Join("；", failures) : "");
+        }
+
+        // Storage values round-trip through the parser.
+        Check("深色主题存储值", ThemeKeys.StorageValue(AppTheme.Dark) == "dark", ThemeKeys.StorageValue(AppTheme.Dark));
+        Check("浅色主题存储值", ThemeKeys.StorageValue(AppTheme.Light) == "light", ThemeKeys.StorageValue(AppTheme.Light));
+        Check("存储值解析回枚举", ThemeKeys.Parse("light") == AppTheme.Light);
+        Check("未知存储值回落深色", ThemeKeys.Parse("nonsense") == AppTheme.Dark);
+        Check("空值回落深色", ThemeKeys.Parse(null) == AppTheme.Dark);
+
+        // Every window must take its colours from the theme. A hard-coded colour is fixed at creation
+        // and ignores a theme switch, which is how the source picker dialog ended up staying dark —
+        // and a new window added later would fail the same way without this check.
+        var xamlDir = Path.Combine(repoRoot, "src", "DLSSGManager");
+        var offenders = new List<string>();
+
+        foreach (var file in Directory.EnumerateFiles(xamlDir, "*.xaml", SearchOption.AllDirectories))
+        {
+            // The theme dictionaries are where colours are supposed to be defined.
+            if (file.Contains($"{Path.DirectorySeparatorChar}Themes{Path.DirectorySeparatorChar}")) continue;
+
+            var text = File.ReadAllText(file);
+
+            // Strip comments so a colour mentioned in a comment is not counted.
+            text = Regex.Replace(text, @"<!--.*?-->", "", RegexOptions.Singleline);
+
+            foreach (Match m in Regex.Matches(text, @"(?:Value|Background|Foreground|BorderBrush|Fill|Color)=""(#[0-9A-Fa-f]{6,8})"""))
+                offenders.Add($"{Path.GetFileName(file)}:{m.Groups[1].Value}");
+        }
+
+        Check("界面文件中没有硬编码颜色",
+            offenders.Count == 0,
+            offenders.Count > 0 ? string.Join("、", offenders.Take(6)) : "");
+
+        // Same for colours assigned in code, which also bypass the theme.
+        var codeOffenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(xamlDir, "*.cs", SearchOption.TopDirectoryOnly))
+        {
+            var name = Path.GetFileName(file);
+            // Palette and ThemeKeys legitimately name keys rather than colours.
+            if (name is "Palette.cs" or "ThemeKeys.cs" or "Theme.cs") continue;
+
+            var text = Regex.Replace(File.ReadAllText(file), @"//.*$", "", RegexOptions.Multiline);
+            foreach (Match m in Regex.Matches(text, @"Color\.FromRgb\(|""#[0-9A-Fa-f]{6}"""))
+                codeOffenders.Add($"{name}:{m.Value}");
+        }
+
+        Check("代码中未直接写入颜色",
+            codeOffenders.Count == 0,
+            codeOffenders.Count > 0 ? string.Join("、", codeOffenders.Take(6)) : "");
+    }
+
+    /// <summary>Reads the x:Key names a theme dictionary defines.</summary>
+    private static HashSet<string> ThemeKeysIn(string path) =>
+        Regex.Matches(File.ReadAllText(path), @"x:Key=""([A-Za-z0-9_]+)""")
+            .Select(m => m.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>Maps each key in a theme dictionary to its colour value.</summary>
+    private static Dictionary<string, string> ThemeColorValues(string path) =>
+        Regex.Matches(File.ReadAllText(path), @"x:Key=""([A-Za-z0-9_]+)""\s+Color=""(#[0-9A-Fa-f]{6,8})""")
+            .ToDictionary(m => m.Groups[1].Value, m => m.Groups[2].Value, StringComparer.Ordinal);
+
+    /// <summary>Rough luminance test, enough to tell a dark background from a light one.</summary>
+    private static bool IsDark(string hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex) || hex.Length < 7) return false;
+
+        var r = Convert.ToInt32(hex.Substring(1, 2), 16);
+        var g = Convert.ToInt32(hex.Substring(3, 2), 16);
+        var b = Convert.ToInt32(hex.Substring(5, 2), 16);
+
+        // Rec. 601 luma.
+        return (0.299 * r + 0.587 * g + 0.114 * b) < 128;
+    }
+
+    /// <summary>
+    /// WCAG contrast ratio between two colours, from 1:1 to 21:1.
+    ///
+    /// Uses the WCAG relative-luminance formula, which linearises each channel. A plain luma average
+    /// understates the contrast of saturated colours and would pass combinations that are hard to read.
+    /// </summary>
+    private static double ContrastRatio(string foreground, string background)
+    {
+        static double Luminance(string hex)
+        {
+            var r = Convert.ToInt32(hex.Substring(1, 2), 16) / 255.0;
+            var g = Convert.ToInt32(hex.Substring(3, 2), 16) / 255.0;
+            var b = Convert.ToInt32(hex.Substring(5, 2), 16) / 255.0;
+
+            static double Channel(double c) => c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+
+            return 0.2126 * Channel(r) + 0.7152 * Channel(g) + 0.0722 * Channel(b);
+        }
+
+        var lf = Luminance(foreground);
+        var lb = Luminance(background);
+        return (Math.Max(lf, lb) + 0.05) / (Math.Min(lf, lb) + 0.05);
+    }
+
     private static void TestSourceSelection()
     {
         Section("下载源选择");

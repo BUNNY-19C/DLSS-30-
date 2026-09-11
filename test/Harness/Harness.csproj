@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <Compile Include="..\..\src\DLSSGManager\Models.cs" />
+    <Compile Include="..\..\src\DLSSGManager\Palette.cs" />
+    <Compile Include="..\..\src\DLSSGManager\ThemeKeys.cs" />
     <Compile Include="..\..\src\DLSSGManager\Localization.cs" />
     <Compile Include="..\..\src\DLSSGManager\Strings.cs" />
     <Compile Include="..\..\src\DLSSGManager\Strings.zh.cs" />

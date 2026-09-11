@@ -5,15 +5,22 @@
         Title="{loc:Tr Fetch.PickerTitle}"
         SizeToContent="Height" Width="480"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
-        Background="#1A1D25" Foreground="#E6E8EC"
+        Background="{DynamicResource WindowBackground}" Foreground="{DynamicResource TextPrimary}"
         FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13"
         ShowInTaskbar="False">
 
+    <!--
+        颜色全部走 DynamicResource，指向应用级主题字典（Themes/*.xaml）。
+
+        这个 Window 有自己的资源作用域：MainWindow.xaml 里定义的那些隐式样式
+        （TextBlock、ComboBox、RadioButton）不会传到这里。所以按钮和单选按钮的
+        样式必须在这个文件里重新定义，否则浅色主题下会露出默认的浅色控件外观。
+    -->
     <Window.Resources>
         <Style x:Key="PickerButton" TargetType="Button">
-            <Setter Property="Background" Value="#2A2F3A" />
-            <Setter Property="Foreground" Value="#E6E8EC" />
-            <Setter Property="BorderBrush" Value="#3A414D" />
+            <Setter Property="Background" Value="{DynamicResource ButtonBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ButtonBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="16,7" />
             <Setter Property="Cursor" Value="Hand" />
@@ -28,7 +35,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#353B48" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBackground}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
@@ -37,6 +44,95 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style x:Key="PickerPrimaryButton" TargetType="Button" BasedOn="{StaticResource PickerButton}">
+            <Setter Property="Background" Value="{DynamicResource PrimaryBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource OnPrimaryText}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBackground}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 单选按钮自带样式，否则会露出系统默认的浅色圆形标记，
+             在深色主题下对比度不足、在浅色主题下又与其余控件不协调。 -->
+        <Style x:Key="PickerRadio" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Grid Background="Transparent">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="Outer" Grid.Column="0" Width="15" Height="15" CornerRadius="8"
+                                    BorderThickness="1.5"
+                                    BorderBrush="{DynamicResource InputBorderBrush}"
+                                    Background="{DynamicResource InputBackground}"
+                                    VerticalAlignment="Top" Margin="0,3,9,0">
+                                <Ellipse x:Name="Dot" Width="7" Height="7" Fill="Transparent" />
+                            </Border>
+                            <ContentPresenter Grid.Column="1" VerticalAlignment="Top" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Dot" Property="Fill" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Outer" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Outer" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PickerSeparator" TargetType="Border">
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource LineBrush}" />
+            <Setter Property="Margin" Value="0,8,0,8" />
+        </Style>
+
+        <Style x:Key="PickerBadge" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackground}" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="Padding" Value="6,1,6,1" />
+            <Setter Property="Margin" Value="8,1,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="PickerBadgeText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+        </Style>
+
+        <Style x:Key="PickerNoteText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSection}" />
         </Style>
     </Window.Resources>
 
@@ -55,8 +151,7 @@
                     Style="{StaticResource PickerButton}" Margin="0,0,8,0"
                     IsCancel="True" Click="Cancel_Click" />
             <Button x:Name="ConfirmButton" Content="{loc:Tr Fetch.PickerDownload}"
-                    Style="{StaticResource PickerButton}"
-                    Background="#2F6FE4" BorderBrush="#4C8DFF" FontWeight="SemiBold"
+                    Style="{StaticResource PickerPrimaryButton}"
                     IsDefault="True" Click="Confirm_Click" />
         </StackPanel>
     </StackPanel>

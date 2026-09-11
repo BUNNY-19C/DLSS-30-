@@ -4,54 +4,55 @@
         xmlns:local="clr-namespace:DLSSGManager"
         xmlns:loc="clr-namespace:DLSSGManager"
         Title="{loc:Tr App.Name}" Height="820" Width="1240" MinHeight="640" MinWidth="1040"
-        Background="#12141A" Foreground="#E6E8EC"
+        Background="{DynamicResource WindowBackground}" Foreground="{DynamicResource TextPrimary}"
         FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13">
 
     <Window.Resources>
         <local:BoolToVisibility x:Key="BoolToVis" />
         <local:NotEmptyToVisibility x:Key="NotEmptyToVis" />
+        <local:ThemeBrushConverter x:Key="ThemeBrush" />
 
-        <SolidColorBrush x:Key="PanelBrush" Color="#1A1D25" />
-        <SolidColorBrush x:Key="CardBrush" Color="#22262F" />
-        <SolidColorBrush x:Key="LineBrush" Color="#2E333D" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#4C8DFF" />
-        <SolidColorBrush x:Key="MutedBrush" Color="#9AA0A6" />
+        <!--
+            颜色全部来自主题字典（Themes/Dark.xaml 或 Themes/Light.xaml），用 DynamicResource
+            引用。DynamicResource 是必需的：StaticResource 在元素创建时解析一次，
+            之后切换主题不会重新查表，界面会停在旧配色上。
+        -->
 
         <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#E6E8EC" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         </Style>
 
         <Style x:Key="SectionTitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="#8B93A1" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSection}" />
             <Setter Property="Margin" Value="0,14,0,6" />
         </Style>
 
         <Style x:Key="FieldLabel" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#9AA0A6" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,10,0" />
             <Setter Property="FontSize" Value="12" />
         </Style>
 
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#15181F" />
-            <Setter Property="Foreground" Value="#E6E8EC" />
-            <Setter Property="BorderBrush" Value="#333944" />
+            <Setter Property="Background" Value="{DynamicResource InputBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="7,5" />
-            <Setter Property="CaretBrush" Value="#E6E8EC" />
-            <Setter Property="SelectionBrush" Value="#4C8DFF" />
+            <Setter Property="CaretBrush" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource AccentBrush}" />
         </Style>
 
         <!-- The stock ComboBox template paints its own light background regardless of the
              Background/Foreground setters, which makes light-on-light text invisible.
              A full template is required to render it on the dark theme. -->
         <Style TargetType="ComboBox">
-            <Setter Property="Foreground" Value="#E6E8EC" />
-            <Setter Property="Background" Value="#15181F" />
-            <Setter Property="BorderBrush" Value="#333944" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Background" Value="{DynamicResource InputBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="8,5" />
             <Setter Property="SnapsToDevicePixels" Value="True" />
@@ -59,7 +60,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
                         <Grid>
-                            <Border x:Name="Bd" Background="#15181F" BorderBrush="#333944"
+                            <Border x:Name="Bd" Background="{DynamicResource InputBackground}" BorderBrush="{DynamicResource InputBorderBrush}"
                                     BorderThickness="1" CornerRadius="4">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -72,7 +73,7 @@
                                                       Content="{TemplateBinding SelectionBoxItem}"
                                                       ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
                                                       ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}" />
-                                    <Path Grid.Column="1" Data="M 0 0 L 4 4 L 8 0 Z" Fill="#9AA0A6"
+                                    <Path Grid.Column="1" Data="M 0 0 L 4 4 L 8 0 Z" Fill="{DynamicResource TextMuted}"
                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Grid>
                             </Border>
@@ -92,7 +93,7 @@
                             <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True"
                                    Focusable="False" PopupAnimation="Slide"
                                    IsOpen="{TemplateBinding IsDropDownOpen}">
-                                <Border Background="#1A1D25" BorderBrush="#3A414D" BorderThickness="1"
+                                <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource ButtonBorderBrush}" BorderThickness="1"
                                         CornerRadius="4" Margin="0,2,0,0"
                                         MinWidth="{TemplateBinding ActualWidth}"
                                         MaxHeight="{TemplateBinding MaxDropDownHeight}">
@@ -104,7 +105,7 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#4C8DFF" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.5" />
@@ -116,7 +117,7 @@
         </Style>
 
         <Style TargetType="ComboBoxItem">
-            <Setter Property="Foreground" Value="#E6E8EC" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
             <Setter Property="Padding" Value="10,7" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -126,10 +127,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#2C3A55" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ListSelectedBackground}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#2F6FE4" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryBackground}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -138,14 +139,14 @@
         </Style>
 
         <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="#E6E8EC" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
         <Style x:Key="ToolButton" TargetType="Button">
-            <Setter Property="Background" Value="#2A2F3A" />
-            <Setter Property="Foreground" Value="#E6E8EC" />
-            <Setter Property="BorderBrush" Value="#3A414D" />
+            <Setter Property="Background" Value="{DynamicResource ButtonBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ButtonBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="13,7" />
             <Setter Property="Margin" Value="0,0,8,0" />
@@ -161,7 +162,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#353B48" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBackground}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
@@ -173,8 +174,8 @@
         </Style>
 
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
-            <Setter Property="Background" Value="#2F6FE4" />
-            <Setter Property="BorderBrush" Value="#4C8DFF" />
+            <Setter Property="Background" Value="{DynamicResource PrimaryBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -187,7 +188,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#3D7DF2" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBackground}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
@@ -199,9 +200,9 @@
         </Style>
 
         <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
-            <Setter Property="Background" Value="#3A2A2A" />
-            <Setter Property="BorderBrush" Value="#5C3A3A" />
-            <Setter Property="Foreground" Value="#FFB4B4" />
+            <Setter Property="Background" Value="{DynamicResource DangerBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource DangerText}" />
         </Style>
     </Window.Resources>
 
@@ -222,7 +223,7 @@
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
                 <TextBlock Text="{loc:Tr App.Name}" FontSize="19" FontWeight="Bold" />
-                <TextBlock x:Name="SubtitleText" Foreground="{StaticResource MutedBrush}"
+                <TextBlock x:Name="SubtitleText" Foreground="{DynamicResource TextMuted}"
                            FontSize="11.5" Margin="0,3,0,0"
                            Text="{loc:Tr App.Subtitle}" />
             </StackPanel>
@@ -234,8 +235,8 @@
         </Grid>
 
         <!-- Toolbar -->
-        <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="7"
-                Padding="12,10" Margin="0,14,0,12" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+        <Border Grid.Row="1" Background="{DynamicResource PanelBackground}" CornerRadius="7"
+                Padding="12,10" Margin="0,14,0,12" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -248,14 +249,15 @@
                         <TextBlock x:Name="ModSourceText" VerticalAlignment="Center" FontSize="12"
                                    TextTrimming="CharacterEllipsis" MaxWidth="640" />
                         <Border x:Name="ModSourceBadge" CornerRadius="3" Padding="6,1" Margin="8,0,0,0"
-                                Background="#2A3A2A" VerticalAlignment="Center">
-                            <TextBlock x:Name="ModSourceBadgeText" FontSize="11" Foreground="#9BD69B" />
+                                Background="{DynamicResource BadgeOkBackground}" VerticalAlignment="Center">
+                            <TextBlock x:Name="ModSourceBadgeText" FontSize="11"
+                                       Foreground="{DynamicResource BadgeOkText}" />
                         </Border>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
                         <TextBlock Text="{loc:Tr Toolbar.Gpu}" Style="{StaticResource FieldLabel}" />
                         <TextBlock x:Name="GpuText" VerticalAlignment="Center" FontSize="12" />
-                        <TextBlock x:Name="RouterHintText" Foreground="{StaticResource MutedBrush}"
+                        <TextBlock x:Name="RouterHintText" Foreground="{DynamicResource TextMuted}"
                                    FontSize="11.5" Margin="10,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </StackPanel>
@@ -266,7 +268,11 @@
                     <Button Content="{loc:Tr Toolbar.UpdateMod}" Style="{StaticResource ToolButton}"
                             Click="UpdateMod_Click" Margin="0"
                             ToolTip="{loc:Tr Toolbar.UpdateModTip}" />
-                    <ComboBox x:Name="LanguageCombo" Width="118" Margin="10,0,0,0"
+                    <ComboBox x:Name="ThemeCombo" Width="96" Margin="10,0,0,0"
+                              VerticalAlignment="Center"
+                              ToolTip="{loc:Tr Toolbar.Theme}"
+                              SelectionChanged="ThemeCombo_SelectionChanged" />
+                    <ComboBox x:Name="LanguageCombo" Width="118" Margin="8,0,0,0"
                               VerticalAlignment="Center"
                               ToolTip="{loc:Tr Toolbar.Language}"
                               SelectionChanged="LanguageCombo_SelectionChanged" />
@@ -283,8 +289,8 @@
             </Grid.ColumnDefinitions>
 
             <!-- Game list -->
-            <Border Grid.Column="0" Background="{StaticResource PanelBrush}" CornerRadius="7"
-                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+            <Border Grid.Column="0" Background="{DynamicResource PanelBackground}" CornerRadius="7"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -318,10 +324,10 @@
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="Bd" Property="Background" Value="#252A33" />
+                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ListHoverBackground}" />
                                                 </Trigger>
                                                 <Trigger Property="IsSelected" Value="True">
-                                                    <Setter TargetName="Bd" Property="Background" Value="#2C3A55" />
+                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ListSelectedBackground}" />
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -337,14 +343,16 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4"
-                                            Background="{Binding StatusColor}" VerticalAlignment="Top" Margin="0,5,9,0" />
+                                            Background="{Binding StatusColor, Converter={StaticResource ThemeBrush}}"
+                                            VerticalAlignment="Top" Margin="0,5,9,0" />
                                     <StackPanel Grid.Column="1">
                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
                                                    TextTrimming="CharacterEllipsis" />
                                         <TextBlock Text="{Binding StatusText}" FontSize="11"
-                                                   Foreground="{Binding StatusColor}" Margin="0,2,0,0" />
+                                                   Foreground="{Binding StatusColor, Converter={StaticResource ThemeBrush}}"
+                                                   Margin="0,2,0,0" />
                                         <TextBlock Text="{Binding Subtitle}" FontSize="10.5"
-                                                   Foreground="#6E7681" TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource TextFaint}" TextTrimming="CharacterEllipsis"
                                                    Margin="0,1,0,0" />
                                     </StackPanel>
                                 </Grid>
@@ -355,21 +363,21 @@
             </Border>
 
             <!-- Detail -->
-            <Border Grid.Column="2" Background="{StaticResource PanelBrush}" CornerRadius="7"
-                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+            <Border Grid.Column="2" Background="{DynamicResource PanelBackground}" CornerRadius="7"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12,16,14">
                     <StackPanel>
                         <TextBlock x:Name="NoSelectionText" Text="{loc:Tr List.Empty}"
-                                   Foreground="{StaticResource MutedBrush}" Margin="0,20,0,0" />
+                                   Foreground="{DynamicResource TextMuted}" Margin="0,20,0,0" />
 
                         <StackPanel x:Name="DetailPanel" Visibility="Collapsed">
-                            <Border x:Name="AntiCheatBanner" Background="#3A2A1A" BorderBrush="#6B4A1A"
+                            <Border x:Name="AntiCheatBanner" Background="{DynamicResource WarnBannerBackground}" BorderBrush="{DynamicResource WarnBannerBorder}"
                                     BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,12"
                                     Visibility="{Binding ShowAntiCheatBanner, Converter={StaticResource BoolToVis}}">
                                 <StackPanel>
                                     <TextBlock Text="{Binding AntiCheatTitle}" FontWeight="SemiBold"
-                                               Foreground="#FFC46B" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding AntiCheatBody}" Foreground="#D9B98A"
+                                               Foreground="{DynamicResource WarnBannerTitle}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding AntiCheatBody}" Foreground="{DynamicResource WarnBannerBody}"
                                                FontSize="11.5" TextWrapping="Wrap" Margin="0,4,0,0" />
                                 </StackPanel>
                             </Border>
@@ -433,9 +441,9 @@
                             </Grid>
 
                             <TextBlock Text="{loc:Tr Detail.ProxyNote}"
-                                       Foreground="#6E7681" FontSize="11" TextWrapping="Wrap" Margin="88,0,0,12" />
+                                       Foreground="{DynamicResource TextFaint}" FontSize="11" TextWrapping="Wrap" Margin="88,0,0,12" />
 
-                            <Border Height="1" Background="{StaticResource LineBrush}" Margin="0,4,0,4" />
+                            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,4,0,4" />
 
                             <TextBlock Text="{loc:Tr Detail.GroupFg}" Style="{StaticResource SectionTitle}" Margin="0,8,0,6" />
 
@@ -483,7 +491,7 @@
                             <CheckBox Content="{loc:Tr Detail.Diagnostics}"
                                       IsChecked="{Binding Profile.Diagnostics, Mode=TwoWay}" Margin="88,0,0,4" />
 
-                            <Border Height="1" Background="{StaticResource LineBrush}" Margin="0,14,0,4" />
+                            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,14,0,4" />
 
                             <TextBlock Text="{loc:Tr Detail.GroupActions}" Style="{StaticResource SectionTitle}" Margin="0,8,0,6" />
 
@@ -507,11 +515,11 @@
                                           IsChecked="False" Margin="0,2,0,0" />
                             </StackPanel>
 
-                            <Border Background="{StaticResource CardBrush}" CornerRadius="6" Padding="11,9" Margin="0,14,0,0"
+                            <Border Background="{DynamicResource CardBackground}" CornerRadius="6" Padding="11,9" Margin="0,14,0,0"
                                     x:Name="StatusCard">
                                 <StackPanel>
                                     <TextBlock x:Name="StatusTitle" FontWeight="SemiBold" />
-                                    <TextBlock x:Name="StatusBody" Foreground="{StaticResource MutedBrush}"
+                                    <TextBlock x:Name="StatusBody" Foreground="{DynamicResource TextMuted}"
                                                FontSize="11.5" TextWrapping="Wrap" Margin="0,3,0,0" />
                                 </StackPanel>
                             </Border>
@@ -527,24 +535,24 @@
             <Button Content="{loc:Tr Action.RestoreAll}" Style="{StaticResource DangerButton}" Click="RestoreAll_Click" />
             <Button Content="{loc:Tr Action.RefreshAll}" Style="{StaticResource ToolButton}" Click="RefreshAll_Click" />
             <TextBlock x:Name="BatchStatusText" VerticalAlignment="Center" Margin="6,0,0,0"
-                       Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                       Foreground="{DynamicResource TextMuted}" FontSize="12" />
         </StackPanel>
 
         <!-- Log -->
-        <Border Grid.Row="4" Background="#0E1015" CornerRadius="7"
-                BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+        <Border Grid.Row="4" Background="{DynamicResource LogBackground}" CornerRadius="7"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0" Margin="12,8,12,4">
-                    <TextBlock Text="{loc:Tr Action.Output}" FontWeight="SemiBold" FontSize="12" Foreground="#B9C0CC" />
+                    <TextBlock Text="{loc:Tr Action.Output}" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextLogTitle}" />
                     <Button Content="{loc:Tr Action.Clear}" HorizontalAlignment="Right" Padding="9,3" FontSize="11"
                             Style="{StaticResource ToolButton}" Click="ClearLog_Click" />
                 </Grid>
                 <TextBox x:Name="OutputBox" Grid.Row="1" Margin="8,0,8,8" IsReadOnly="True"
-                         Background="#0E1015" BorderThickness="0" Foreground="#C6CDD8"
+                         Background="{DynamicResource LogBackground}" BorderThickness="0" Foreground="{DynamicResource TextOnLog}"
                          FontFamily="Cascadia Mono, Consolas, monospace" FontSize="11.5"
                          TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                          IsUndoEnabled="False" />

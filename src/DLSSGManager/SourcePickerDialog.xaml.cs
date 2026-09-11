@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 
 namespace DLSSGManager;
 
@@ -14,6 +13,10 @@ namespace DLSSGManager;
 /// "Automatic" is offered first and pre-selected — trying each source in turn is what most users
 /// want. Picking one source deliberately is for when an endpoint is known to be needed, or is being
 /// diagnosed, and in that case the downloader does not silently fall back to another.
+///
+/// All colours come from styles declared in the matching XAML file, which in turn reference the
+/// application theme dictionary. Colours must not be set inline here: an inline brush is fixed at
+/// creation time and would keep the dialog in the dark theme after a switch.
 /// </summary>
 public partial class SourcePickerDialog : Window
 {
@@ -26,6 +29,8 @@ public partial class SourcePickerDialog : Window
         BuildList();
     }
 
+    private Style? LookupStyle(string key) => TryFindResource(key) as Style;
+
     private void BuildList()
     {
         // Automatic first.
@@ -36,12 +41,9 @@ public partial class SourcePickerDialog : Window
             Loc.T("Fetch.PickerAutoNote"),
             isChecked: true));
 
-        OptionsPanel.Children.Add(new Border
-        {
-            Height = 1,
-            Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x33, 0x3D)),
-            Margin = new Thickness(0, 8, 0, 8),
-        });
+        var separator = new Border();
+        if (LookupStyle("PickerSeparator") is { } separatorStyle) separator.Style = separatorStyle;
+        OptionsPanel.Children.Add(separator);
 
         foreach (var source in ModFetcher.AvailableSources)
         {
@@ -64,32 +66,21 @@ public partial class SourcePickerDialog : Window
             // Marks an official endpoint versus a third-party mirror. The difference matters: on a
             // mirror the certificate pin is enforced strictly, because the mirror is not the authority
             // for the content.
-            titleRow.Children.Add(new Border
-            {
-                Background = new SolidColorBrush(Color.FromRgb(0x2A, 0x2F, 0x3A)),
-                CornerRadius = new CornerRadius(3),
-                Padding = new Thickness(6, 1, 6, 1),
-                Margin = new Thickness(8, 1, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = new TextBlock
-                {
-                    Text = badge,
-                    FontSize = 11,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0xA0, 0xA6)),
-                },
-            });
+            var badgeText = new TextBlock { Text = badge };
+            if (LookupStyle("PickerBadgeText") is { } badgeTextStyle) badgeText.Style = badgeTextStyle;
+
+            var badgeBorder = new Border { Child = badgeText };
+            if (LookupStyle("PickerBadge") is { } badgeStyle) badgeBorder.Style = badgeStyle;
+
+            titleRow.Children.Add(badgeBorder);
         }
+
+        var noteText = new TextBlock { Text = note };
+        if (LookupStyle("PickerNoteText") is { } noteStyle) noteText.Style = noteStyle;
 
         var content = new StackPanel();
         content.Children.Add(titleRow);
-        content.Children.Add(new TextBlock
-        {
-            Text = note,
-            FontSize = 11.5,
-            Margin = new Thickness(0, 2, 0, 0),
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x93, 0xA1)),
-        });
+        content.Children.Add(noteText);
 
         var radio = new RadioButton
         {
@@ -100,6 +91,8 @@ public partial class SourcePickerDialog : Window
             Margin = new Thickness(0, 4, 0, 4),
             VerticalContentAlignment = VerticalAlignment.Top,
         };
+
+        if (LookupStyle("PickerRadio") is { } radioStyle) radio.Style = radioStyle;
 
         radio.Checked += (_, _) => SelectedSourceId = id;
         return radio;

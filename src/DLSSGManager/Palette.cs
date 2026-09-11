@@ -1,24 +1,24 @@
-using System.Windows.Media;
-
 namespace DLSSGManager;
 
-/// <summary>Central place for the status colours used by both the list and the detail card.</summary>
+/// <summary>
+/// The theme keys used for game status and the mod-source badge.
+///
+/// Only names live here — the actual brushes come from the active theme dictionary. Keeping this free
+/// of WPF types lets the deployment model and the console test project reference a status colour
+/// without pulling in the presentation framework.
+/// </summary>
 public static class Palette
 {
-    public const string Ok = "#4C9A2A";
-    public const string Warn = "#C77700";
-    public const string Bad = "#C62828";
-    public const string Idle = "#9AA0A6";
+    // Game status, as shown in the list and the detail heading.
+    public const string Ok = ThemeKeys.StatusOkBrush;
+    public const string Warn = ThemeKeys.StatusWarnBrush;
+    public const string Bad = ThemeKeys.StatusBadBrush;
+    public const string Idle = ThemeKeys.StatusIdleBrush;
 
-    public static SolidColorBrush Fill(string hex)
-    {
-        try
-        {
-            return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
-        }
-        catch
-        {
-            return new SolidColorBrush(Colors.Gray);
-        }
-    }
+    // The mod-source badge.
+    public const string BadgeOk = ThemeKeys.BadgeOkBackground;
+    public const string BadgeOkText = ThemeKeys.BadgeOkText;
+    public const string BadgeWarn = ThemeKeys.BadgeWarnBackground;
+    public const string BadgeWarnText = ThemeKeys.BadgeWarnText;
+    public const string BadgeBadText = ThemeKeys.DangerText;
 }

@@ -190,14 +190,20 @@ public sealed class GameEntry : Observable
         _ => Loc.T("Status.NotChecked"),
     };
 
+    /// <summary>
+    /// Theme key for this status, resolved to a brush by <see cref="ThemeBrushConverter"/>.
+    ///
+    /// A key rather than a colour: the two themes need different values (the dark theme's green is
+    /// unreadable on white), and going through the converter means a theme switch updates the list
+    /// without the model knowing about brushes.
+    /// </summary>
     [JsonIgnore]
     public string StatusColor => Status switch
     {
-        GameStatus.Deployed => "#4C9A2A",
-        GameStatus.Modified => "#C77700",
-        GameStatus.Missing => "#C62828",
-        GameStatus.NotDeployed => "#9AA0A6",
-        _ => "#9AA0A6",
+        GameStatus.Deployed => Palette.Ok,
+        GameStatus.Modified => Palette.Warn,
+        GameStatus.Missing => Palette.Bad,
+        _ => Palette.Idle,
     };
 
     [JsonIgnore] public string Subtitle => string.IsNullOrWhiteSpace(RenderDir) ? Loc.T("Detail.NoPath") : RenderDir;
@@ -239,6 +245,9 @@ public sealed class AppData
 
     /// <summary>Interface language code; see <see cref="Languages"/>.</summary>
     public string InterfaceLanguage { get; set; } = Languages.ChineseSimplified;
+
+    /// <summary>Colour scheme: "dark" or "light". See <see cref="Theme"/>.</summary>
+    public string InterfaceTheme { get; set; } = "dark";
     /// <summary>Detected GPU name, cached so the UI shows something before the probe finishes.</summary>
     public string GpuName { get; set; } = "";
     public string GpuDriver { get; set; } = "";
