@@ -13,6 +13,9 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _scanCts;
     private bool _busy;
 
+    /// <summary>Keeps overlapping status refreshes from racing over the same game properties.</summary>
+    private bool _statusRefreshRunning;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -310,22 +313,54 @@ public partial class MainWindow : Window
 
     // ---- status -------------------------------------------------------------
 
-    private void Check_Click(object sender, RoutedEventArgs e)
+    private async void Check_Click(object sender, RoutedEventArgs e)
     {
         var game = Selected;
         if (game is null) return;
 
-        DeploymentService.Check(game);
+        var check = await Task.Run(() => DeploymentService.Evaluate(game));
+        DeploymentService.Apply(game, check);
+
         UpdateStatusCard();
         _log.Write($"检查 {game.Name}：{game.StatusText} — {game.StatusDetail}");
     }
 
     private void RefreshAll_Click(object sender, RoutedEventArgs e) => RefreshAllStatus();
 
-    private void RefreshAllStatus()
+    /// <summary>
+    /// Re-reads every game's state.
+    ///
+    /// The inspection runs on the thread pool because it is expensive: each candidate entry name is
+    /// verified with WinVerifyTrust over a ~15 MB DLL, and a deployed game is hashed again. Doing
+    /// that inline froze the window for seconds once a few games were listed. Results are applied
+    /// back here, since assigning those properties is what raises the change notifications the list
+    /// binds to.
+    /// </summary>
+    private async void RefreshAllStatus()
     {
-        foreach (var game in _data.Games) DeploymentService.Check(game);
-        LibraryStore.Save(_data);
-        UpdateStatusCard();
+        // Called at startup, after batch operations, and by the refresh button, so two runs can
+        // otherwise overlap and fight over the same properties.
+        if (_statusRefreshRunning) return;
+        _statusRefreshRunning = true;
+
+        try
+        {
+            var games = _data.Games.ToList();
+            var results = await Task.Run(() =>
+                games.Select(g => (Game: g, Check: DeploymentService.Evaluate(g))).ToList());
+
+            foreach (var (game, check) in results) DeploymentService.Apply(game, check);
+
+            LibraryStore.Save(_data);
+            UpdateStatusCard();
+        }
+        catch (Exception ex)
+        {
+            _log.Write("刷新状态失败：" + ex.Message);
+        }
+        finally
+        {
+            _statusRefreshRunning = false;
+        }
     }
 }

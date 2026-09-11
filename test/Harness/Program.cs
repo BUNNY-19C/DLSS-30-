@@ -426,6 +426,58 @@ public static class Program
         Check("型号→路由：未知型号回落 SM86", Gpu.RouteForAdapter("Some Unknown Adapter") == "SM86");
         Check("型号→路由：空值不抛异常", Gpu.RouteForAdapter("") == "SM86");
 
+        // Hardware id parsing and architecture blocks. The route decision uses these instead of the
+        // product name, because a name can be edited in the registry while the id cannot.
+        Check("从设备路径解析硬件 ID",
+            Gpu.ParsePciDeviceId(@"PCI\VEN_10DE&DEV_2208&SUBSYS_88021043&REV_A1\4&D0BDF66&0&0009") == "2208",
+            Gpu.ParsePciDeviceId(@"PCI\VEN_10DE&DEV_2208&SUBSYS_88021043&REV_A1\4&D0BDF66&0&0009"));
+        Check("解析结果统一大写", Gpu.ParsePciDeviceId(@"PCI\VEN_10DE&DEV_2b85&SUBSYS_X") == "2B85");
+        Check("无 ID 的路径返回空", Gpu.ParsePciDeviceId(@"PCI\VEN_10DE&SUBSYS_X") is null);
+        Check("空路径不抛异常", Gpu.ParsePciDeviceId(null) is null);
+
+        Check("识别 NVIDIA 厂商 ID", Gpu.IsNvidiaDevice(@"PCI\VEN_10DE&DEV_2208"));
+        Check("识别非 NVIDIA 厂商 ID", !Gpu.IsNvidiaDevice(@"PCI\VEN_1002&DEV_13C0"));
+
+        Check("硬件 ID 2208 → Ampere", Gpu.FamilyFromDeviceId("2208") == "Ampere", Gpu.FamilyFromDeviceId("2208"));
+        Check("硬件 ID 1E04 → Turing", Gpu.FamilyFromDeviceId("1E04") == "Turing", Gpu.FamilyFromDeviceId("1E04"));
+        Check("硬件 ID 2684 → Ada", Gpu.FamilyFromDeviceId("2684") == "Ada", Gpu.FamilyFromDeviceId("2684"));
+        Check("硬件 ID 2B85 → Blackwell", Gpu.FamilyFromDeviceId("2B85") == "Blackwell", Gpu.FamilyFromDeviceId("2B85"));
+        Check("未知硬件 ID 返回空", Gpu.FamilyFromDeviceId("FFFF") is null, Gpu.FamilyFromDeviceId("FFFF"));
+        Check("非法硬件 ID 返回空", Gpu.FamilyFromDeviceId("zzzz") is null);
+        Check("空硬件 ID 返回空", Gpu.FamilyFromDeviceId("") is null);
+
+        Check("架构→路由：Turing → SM75", Gpu.RouteForFamily("Turing") == "SM75");
+        Check("架构→路由：Ampere → SM86", Gpu.RouteForFamily("Ampere") == "SM86");
+        Check("架构→路由：Ada → SM86", Gpu.RouteForFamily("Ada") == "SM86");
+        Check("架构→路由：未知 → SM86", Gpu.RouteForFamily(null) == "SM86");
+
+        // A renamed adapter: the product name claims one architecture, the hardware id another.
+        // This is not hypothetical — the development machine this was written on had exactly this,
+        // and the previous name-based logic gave the user wrong advice ("40 series, not needed").
+        var (spoofedFamily, spoofedMismatch) = Gpu.Classify("NVIDIA GeForce RTX 4090", "2208");
+        Check("伪装显卡：识别为名称与硬件不符", spoofedMismatch);
+        Check("伪装显卡：按硬件 ID 判定为 Ampere", spoofedFamily == "Ampere", spoofedFamily);
+        Check("伪装显卡：路由取硬件 ID 的 SM86", Gpu.RouteForFamily(spoofedFamily) == "SM86");
+
+        var (agreeFamily, agreeMismatch) = Gpu.Classify("NVIDIA GeForce RTX 3080 Ti", "2208");
+        Check("名称与硬件一致时不报警", !agreeMismatch);
+        Check("名称与硬件一致时架构正确", agreeFamily == "Ampere", agreeFamily);
+
+        var (noIdFamily, noIdMismatch) = Gpu.Classify("NVIDIA GeForce RTX 4070", null);
+        Check("无硬件 ID 时回落到名称判定", noIdFamily == "Ada", noIdFamily);
+        Check("无硬件 ID 时不报不符", !noIdMismatch);
+
+        // Hardware-accelerated GPU scheduling: the mod needs it, but a machine may not expose the
+        // setting at all, in which case we stay quiet rather than claiming it is disabled.
+        var hags = Gpu.HardwareSchedulingEnabled();
+        Console.WriteLine("      硬件加速 GPU 计划: " + (hags switch
+        {
+            true => "已开启",
+            false => "未开启",
+            null => "平台未提供该设置",
+        }));
+        Check("HAGS 状态读取不抛异常", true);
+
         // Wording must stay useful for the families that need special handling.
         Check("RTX 40 系提示无需本 Mod",
             Gpu.AdviceForAdapter("NVIDIA GeForce RTX 4070", "1.2.3").Contains("不需要"));

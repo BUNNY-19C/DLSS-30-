@@ -701,56 +701,59 @@ public static class DeploymentService
         return r;
     }
 
-    public static void Check(GameEntry game)
-    {
-        game.Deployment ??= null;
+    /// <summary>
+    /// Outcome of inspecting a game folder. Produced by <see cref="Evaluate"/> and applied by
+    /// <see cref="Apply"/>, which lets the expensive filesystem work run off the UI thread while the
+    /// property changes land on it.
+    /// </summary>
+    public sealed record GameCheck(GameStatus Status, string Detail, ProtectionReport? Protection);
 
+    /// <summary>
+    /// Inspects a game folder and reports its state. Reads the filesystem but modifies nothing, so it
+    /// is safe to call from a background thread.
+    ///
+    /// Split from <see cref="Apply"/> because it is genuinely expensive: each candidate entry name is
+    /// checked with WinVerifyTrust over a ~15 MB DLL, and matching against the record hashes the file
+    /// again. Running that for several games on the UI thread froze the window for seconds.
+    /// </summary>
+    public static GameCheck Evaluate(GameEntry game)
+    {
         if (string.IsNullOrWhiteSpace(game.RenderDir))
-        {
-            game.Status = GameStatus.Unknown;
-            game.StatusDetail = "未设置渲染目录";
-            return;
-        }
+            return new GameCheck(GameStatus.Unknown, "未设置渲染目录", null);
 
         if (!Directory.Exists(game.RenderDir))
-        {
-            game.Status = GameStatus.Missing;
-            game.StatusDetail = "渲染目录不存在";
-            return;
-        }
+            return new GameCheck(GameStatus.Missing, "渲染目录不存在", null);
 
-        // Cheap enough to run on every check, and it is what drives the warning banner.
-        game.Protection = AntiCheat.Scan(game.RenderDir);
+        // Drives the warning banner, so it is refreshed on every check.
+        var protection = AntiCheat.Scan(game.RenderDir);
 
         // More than one proxy of ours is a hard fault: the game loads every entry name it recognises,
         // so two would run two inference pipelines and crash. This is reported ahead of the normal
         // status because it needs fixing before the game is launched, not merely noted.
+        var root = game.RenderDir;
         var liveProxies = ModSource.ProxyCandidates
-            .Where(n => File.Exists(Path.Combine(game.RenderDir, n)) && IsProjectSigned(Path.Combine(game.RenderDir, n)))
+            .Where(n => File.Exists(Path.Combine(root, n)) && IsProjectSigned(Path.Combine(root, n)))
             .ToList();
 
         if (liveProxies.Count > 1)
         {
-            game.Status = GameStatus.Modified;
-            game.StatusDetail =
+            return new GameCheck(GameStatus.Modified,
                 $"发现 {liveProxies.Count} 个代理（{string.Join("、", liveProxies)}）。" +
-                "本项目只允许保留一个，多个同时存在会导致游戏崩溃。点「一键恢复」清理后重新部署。";
-            return;
+                "本项目只允许保留一个，多个同时存在会导致游戏崩溃。点「一键恢复」清理后重新部署。",
+                protection);
         }
 
         var prev = game.Deployment;
         if (prev is null)
         {
-            var found = FindInstalledProxy(game.RenderDir);
-            game.Status = GameStatus.NotDeployed;
-            game.StatusDetail = found is null
-                ? "未部署"
-                : $"检测到手工安装的 {found}，可点「接管」纳入管理";
-            return;
+            var found = FindInstalledProxy(root);
+            return new GameCheck(GameStatus.NotDeployed,
+                found is null ? "未部署" : $"检测到手工安装的 {found}，可点「接管」纳入管理",
+                protection);
         }
 
-        var proxyPath = Path.Combine(game.RenderDir, prev.ProxyName);
-        var iniPath = Path.Combine(game.RenderDir, ModSource.IniName);
+        var proxyPath = Path.Combine(root, prev.ProxyName);
+        var iniPath = Path.Combine(root, ModSource.IniName);
         var proxyOk = File.Exists(proxyPath);
         var iniOk = File.Exists(iniPath);
 
@@ -758,46 +761,44 @@ public static class DeploymentService
         {
             // A kernel anti-cheat renames the proxy rather than deleting it, so a vanished DLL with
             // quarantined copies left behind is reported distinctly from a plain missing file.
-            var quarantined = AntiCheat.FindQuarantinedCopies(game.RenderDir, prev.ProxyName, prev.ProxySha256);
+            var quarantined = AntiCheat.FindQuarantinedCopies(root, prev.ProxyName, prev.ProxySha256);
 
-            game.Status = GameStatus.Missing;
-            if (quarantined.Count > 0)
-            {
-                var protection = AntiCheat.Scan(game.RenderDir);
-                game.Protection = protection;
-                game.StatusDetail =
-                    $"{prev.ProxyName} 已被反作弊隔离（发现 {quarantined.Count} 个被改名的副本，" +
-                    $"{protection.Summary}）。点「一键恢复」可清理残留。";
-            }
-            else
-            {
-                game.StatusDetail = !proxyOk ? $"{prev.ProxyName} 不存在" : $"{ModSource.IniName} 不存在";
-            }
+            var detail = quarantined.Count > 0
+                ? $"{prev.ProxyName} 已被反作弊隔离（发现 {quarantined.Count} 个被改名的副本，" +
+                  $"{protection.Summary}）。点「一键恢复」可清理残留。"
+                : !proxyOk ? $"{prev.ProxyName} 不存在" : $"{ModSource.IniName} 不存在";
 
-            return;
+            return new GameCheck(GameStatus.Missing, detail, protection);
         }
 
         try
         {
             var proxyMatch = string.Equals(Sha256(proxyPath), prev.ProxySha256, StringComparison.OrdinalIgnoreCase);
             var iniMatch = string.Equals(Sha256(iniPath), prev.IniSha256, StringComparison.OrdinalIgnoreCase);
-            if (proxyMatch && iniMatch)
-            {
-                game.Status = GameStatus.Deployed;
-                game.StatusDetail = $"Mod {prev.ModVersion} · {prev.ProxyName} · {prev.DeployedAt}";
-            }
-            else
-            {
-                game.Status = GameStatus.Modified;
-                game.StatusDetail = proxyMatch ? "INI 已被修改（可能是你在游戏里改过配置）" : "代理 DLL 与部署记录不一致";
-            }
+
+            return proxyMatch && iniMatch
+                ? new GameCheck(GameStatus.Deployed,
+                    $"Mod {prev.ModVersion} · {prev.ProxyName} · {prev.DeployedAt}", protection)
+                : new GameCheck(GameStatus.Modified,
+                    proxyMatch ? "INI 已被修改（可能是你在游戏里改过配置）" : "代理 DLL 与部署记录不一致",
+                    protection);
         }
         catch (Exception ex)
         {
-            game.Status = GameStatus.Unknown;
-            game.StatusDetail = "校验失败：" + ex.Message;
+            return new GameCheck(GameStatus.Unknown, "校验失败：" + ex.Message, protection);
         }
     }
+
+    /// <summary>Applies an evaluation's results. Call on the UI thread.</summary>
+    public static void Apply(GameEntry game, GameCheck check)
+    {
+        if (check.Protection is not null) game.Protection = check.Protection;
+        game.Status = check.Status;
+        game.StatusDetail = check.Detail;
+    }
+
+    /// <summary>Evaluates and applies in one call, for callers already off the UI thread.</summary>
+    public static void Check(GameEntry game) => Apply(game, Evaluate(game));
 
     public static string? LatestLogFile(string renderDir)
     {
