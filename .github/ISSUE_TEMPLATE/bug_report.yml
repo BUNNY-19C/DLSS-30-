@@ -23,9 +23,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: 管理器版本
-      description: 在 Releases 页面或安装包文件名里能看到
-      placeholder: 例如：1.1.0
+      label: 管理器版本 / Manager version
+      description: 在 Releases 页面或安装包文件名里能看到 / Shown on the Releases page or in the installer filename
+      placeholder: 例如 / e.g. 1.4.0
     validations:
       required: true
 

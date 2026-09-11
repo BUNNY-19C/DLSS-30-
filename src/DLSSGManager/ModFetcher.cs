@@ -36,8 +36,11 @@ public static class ModFetcher
         "codeload.github.com",
         "raw.githubusercontent.com",
         "api.github.com",
-        // Third-party CDN mirror. Accepted only with a matching certificate pin.
+        // Third-party mirrors. Accepted only with a matching certificate pin, because a mirror is not
+        // the authority for this content — see Verify().
         "cdn.jsdelivr.net",
+        "gh-proxy.com",
+        "ghfast.top",
     };
 
     /// <summary>
@@ -76,50 +79,101 @@ public static class ModFetcher
     };
 
     /// <summary>
-    /// A download endpoint. <paramref name="Official"/> marks GitHub-operated sources, where TLS to
-    /// the repository is itself the authority and the certificate pin is advisory.
+    /// A download endpoint.
+    ///
+    /// <paramref name="Id"/> is a language-independent identifier used for selection and filtering;
+    /// the display name is resolved from the string table on demand, so it follows the interface
+    /// language. Matching a filter against a localised name would stop working the moment the user
+    /// switched language.
+    ///
+    /// <paramref name="Official"/> marks GitHub-operated sources, where TLS to the repository is
+    /// itself the authority and the certificate pin is advisory.
     /// </summary>
-    private sealed record Source(string Name, bool Official, string UrlTemplate, bool IsArchive);
+    private sealed record Source(string Id, string NameKey, bool Official, string UrlTemplate, bool IsArchive)
+    {
+        public string Name => Loc.T(NameKey);
+    }
 
     private static readonly Source[] Sources =
     {
         // One request, compressed (~28 MB). Preferred when reachable.
-        new(Loc.T("Fetch.SourceCodeload"), true,
+        new("codeload", "Fetch.SourceCodeload", true,
             $"https://codeload.github.com/{RepoPath}/zip/refs/heads/{RepoRef}", true),
 
         // Same content through a different entry point; useful when codeload is throttled.
-        new(Loc.T("Fetch.SourceZipball"), true,
+        new("zipball", "Fetch.SourceZipball", true,
             $"https://api.github.com/repos/{RepoPath}/zipball/{RepoRef}", true),
 
         // Per-file raw access. Slower (~78 MB uncompressed) but a distinct path from codeload.
-        new(Loc.T("Fetch.SourceRaw"), true,
+        new("raw", "Fetch.SourceRaw", true,
             $"https://raw.githubusercontent.com/{RepoPath}/{RepoRef}/{{0}}", false),
 
-        // Public CDN mirror, often reachable where GitHub is not. Certificate pin enforced.
-        new(Loc.T("Fetch.SourceJsDelivr"), false,
+        // Chinese acceleration proxy. It forwards both raw files and codeload archives, and measured
+        // fastest of the mirrors here (a 15 MB file in under a second), so it is tried before the CDN.
+        new("ghproxy", "Fetch.SourceGhProxy", false,
+            $"https://gh-proxy.com/https://raw.githubusercontent.com/{RepoPath}/{RepoRef}/{{0}}", false),
+
+        // Public CDN, usually reachable where GitHub is not.
+        new("jsdelivr", "Fetch.SourceJsDelivr", false,
             $"https://cdn.jsdelivr.net/gh/{RepoPath}@{RepoRef}/{{0}}", false),
+
+        // Another Chinese proxy. Verified for raw files only — it returns 403 for codeload archives, so
+        // it is per-file like the two above and kept last as a final fallback.
+        new("ghfast", "Fetch.SourceGhFast", false,
+            $"https://ghfast.top/https://raw.githubusercontent.com/{RepoPath}/{RepoRef}/{{0}}", false),
     };
+
+    /// <summary>
+    /// A source as presented to the user: a stable id to pass back, plus text in the active language.
+    /// </summary>
+    public sealed record SourceOption(string Id, string Name, string Note, bool Official);
+
+    /// <summary>
+    /// The sources a user may choose from, in the order they would be tried. Notes explain what each
+    /// one is for, since the difference between them is not obvious from the name.
+    /// </summary>
+    public static IReadOnlyList<SourceOption> AvailableSources => Sources
+        .Select(s => new SourceOption(s.Id, s.Name, Loc.T($"Fetch.Note.{s.Id}"), s.Official))
+        .ToArray();
+
+    /// <summary>Id used to mean "try every source in turn"; see <see cref="DownloadIntoAsync"/>.</summary>
+    public const string AutoSourceId = "auto";
 
     public static IReadOnlyList<string> SourceNames => Sources.Select(s => s.Name).ToArray();
 
     /// <summary>
     /// Environment variable naming a single source to use, for diagnosing one endpoint in isolation.
-    /// Matched case-insensitively against <see cref="Source.Name"/>; an unknown value falls back to
-    /// trying every source, so a typo cannot silently disable downloading.
+    /// Matched against <see cref="Source.Id"/>; an unknown value falls back to trying every source, so
+    /// a typo cannot silently disable downloading.
     /// </summary>
     public const string SourceFilterVariable = "DLSSGMANAGER_SOURCE";
 
-    /// <summary>Sources to attempt, honouring <see cref="SourceFilterVariable"/> when set.</summary>
-    private static IEnumerable<Source> ActiveSources()
+    /// <summary>
+    /// Sources to attempt, in order. An explicit <paramref name="sourceId"/> (from the picker) limits
+    /// the attempt to that one source — a deliberate choice should not silently fall back to somewhere
+    /// the user did not pick. Otherwise <see cref="SourceFilterVariable"/> may narrow it for
+    /// diagnostics, and failing that every source is tried in turn.
+    /// </summary>
+    private static IReadOnlyList<Source> ActiveSources(string? sourceId = null)
     {
+        if (!string.IsNullOrWhiteSpace(sourceId) &&
+            !string.Equals(sourceId, AutoSourceId, StringComparison.OrdinalIgnoreCase))
+        {
+            var chosen = Sources.Where(s => string.Equals(s.Id, sourceId, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (chosen.Count > 0) return chosen;
+
+            AppPaths.Log(Loc.T("Fetch.UnknownFilter", sourceId,
+                string.Join(" | ", Sources.Select(s => s.Id))));
+        }
+
         var filter = Environment.GetEnvironmentVariable(SourceFilterVariable);
         if (string.IsNullOrWhiteSpace(filter)) return Sources;
 
-        var matched = Sources.Where(s => s.Name.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        var matched = Sources.Where(s => s.Id.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
         if (matched.Count == 0)
         {
             AppPaths.Log(Loc.T("Fetch.UnknownFilter", filter,
-                string.Join(" | ", Sources.Select(s => s.Name))));
+                string.Join(" | ", Sources.Select(s => s.Id))));
             return Sources;
         }
 
@@ -213,19 +267,30 @@ public static class ModFetcher
     }
 
     /// <summary>
-    /// Downloads the payload, trying each source until one yields a verified result.
+    /// Downloads the payload.
+    ///
+    /// With <paramref name="sourceId"/> null or <see cref="AutoSourceId"/>, each source is tried in
+    /// turn until one yields a verified result. With a specific id, only that source is used: the user
+    /// chose it deliberately, and silently downloading from elsewhere would misreport where the files
+    /// came from and defeat the point of choosing.
     /// </summary>
-    public static async Task<OpResult> DownloadIntoAsync(string destination, IProgress<string>? progress, CancellationToken ct)
+    public static async Task<OpResult> DownloadIntoAsync(
+        string destination,
+        IProgress<string>? progress,
+        CancellationToken ct,
+        string? sourceId = null)
     {
+        var sources = ActiveSources(sourceId);
+        var singleSource = sources.Count == 1 && IsExplicitChoice(sourceId);
+
+        // GitHub's endpoints reset connections fairly often on some networks (observed ~25% of
+        // attempts here), so a transient failure is retried before giving up or moving on.
+        const int attemptsPerSource = 2;
         var failures = new List<string>();
 
-        foreach (var source in ActiveSources())
+        foreach (var source in sources)
         {
             ct.ThrowIfCancellationRequested();
-
-            // GitHub's endpoints reset connections fairly often on some networks (observed ~25% of
-            // attempts here), so a transient failure on one source is retried before moving on.
-            const int attemptsPerSource = 2;
 
             for (var attempt = 1; attempt <= attemptsPerSource; attempt++)
             {
@@ -240,14 +305,20 @@ public static class ModFetcher
                 if (result.Ok) return result;
 
                 AppPaths.Log(Loc.T("Fetch.AttemptFailed", source.Name, attempt, attemptsPerSource, result.Message));
-                if (attempt == attemptsPerSource) failures.Add($"{source.Name}：{result.Message}");
+                if (attempt == attemptsPerSource) failures.Add(Loc.T("Fetch.FailureItem", source.Name, result.Message));
             }
         }
 
         var r = new OpResult();
-        r.Fail(Loc.T("Fetch.AllFailed", string.Join("\n     ", failures)));
+        r.Fail(Loc.T(singleSource ? "Fetch.SingleSourceFailed" : "Fetch.AllFailed",
+                     string.Join("\n     ", failures)));
         return r;
     }
+
+    /// <summary>True when the caller named a source rather than leaving it on automatic.</summary>
+    private static bool IsExplicitChoice(string? sourceId) =>
+        !string.IsNullOrWhiteSpace(sourceId) &&
+        !string.Equals(sourceId, AutoSourceId, StringComparison.OrdinalIgnoreCase);
 
     private static async Task<OpResult> AttemptAsync(Source source, string destination, IProgress<string>? progress, CancellationToken ct)
     {

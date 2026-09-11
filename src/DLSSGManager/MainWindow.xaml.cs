@@ -255,19 +255,24 @@ public partial class MainWindow : Window
         if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
         var target = ModSourceLocator.ResolveTarget(_data.ModSourcePath);
-        var answer = MessageBox.Show(this,
-            Loc.T("Fetch.Confirm", target),
-            Loc.T("Fetch.ConfirmTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Information);
-        if (answer != MessageBoxResult.OK) return;
 
-        DownloadModFiles(target, update: true);
+        // The picker replaces a plain confirmation dialog: choosing where to download from is the one
+        // decision worth surfacing here, and it doubles as the confirmation step.
+        var picker = new SourcePickerDialog { Owner = this };
+        if (picker.ShowDialog() != true) return;
+
+        DownloadModFiles(target, update: true, picker.SelectedSourceId);
     }
 
     /// <summary>
     /// Downloads the mod files into <paramref name="target"/>. Shared by the toolbar button and the
     /// first-run prompt so both behave identically.
     /// </summary>
-    private void DownloadModFiles(string target, bool update)
+    /// <param name="sourceId">
+    /// A specific source id, or <see cref="ModFetcher.AutoSourceId"/> to try each in turn. The
+    /// first-run prompt passes automatic, since the user has not been asked to choose yet.
+    /// </param>
+    private void DownloadModFiles(string target, bool update, string sourceId = ModFetcher.AutoSourceId)
     {
         if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
 
@@ -276,7 +281,7 @@ public partial class MainWindow : Window
 
         var progress = UiProgress();
 
-        Task.Run(() => ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None))
+        Task.Run(() => ModFetcher.DownloadIntoAsync(target, progress, CancellationToken.None, sourceId))
             .ContinueWith(t =>
             {
                 _busy = false;

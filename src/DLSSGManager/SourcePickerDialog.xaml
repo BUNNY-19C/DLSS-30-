@@ -1,0 +1,63 @@
+<Window x:Class="DLSSGManager.SourcePickerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:DLSSGManager"
+        Title="{loc:Tr Fetch.PickerTitle}"
+        SizeToContent="Height" Width="480"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="#1A1D25" Foreground="#E6E8EC"
+        FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13"
+        ShowInTaskbar="False">
+
+    <Window.Resources>
+        <Style x:Key="PickerButton" TargetType="Button">
+            <Setter Property="Background" Value="#2A2F3A" />
+            <Setter Property="Foreground" Value="#E6E8EC" />
+            <Setter Property="BorderBrush" Value="#3A414D" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="16,7" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#353B48" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="18">
+        <TextBlock Text="{loc:Tr Fetch.PickerPrompt}" FontSize="14" FontWeight="SemiBold" />
+
+        <!-- Rows are added in code from ModFetcher.AvailableSources, so a new source shows up here
+             without any change to this file. Height is capped and the list scrolls, so the window
+             stays a reasonable size as sources are added. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="420" Margin="0,12,0,0">
+            <StackPanel x:Name="OptionsPanel" />
+        </ScrollViewer>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button x:Name="CancelButton" Content="{loc:Tr Common.Cancel}"
+                    Style="{StaticResource PickerButton}" Margin="0,0,8,0"
+                    IsCancel="True" Click="Cancel_Click" />
+            <Button x:Name="ConfirmButton" Content="{loc:Tr Fetch.PickerDownload}"
+                    Style="{StaticResource PickerButton}"
+                    Background="#2F6FE4" BorderBrush="#4C8DFF" FontWeight="SemiBold"
+                    IsDefault="True" Click="Confirm_Click" />
+        </StackPanel>
+    </StackPanel>
+</Window>

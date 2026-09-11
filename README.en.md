@@ -237,9 +237,19 @@ Click “Download / update mod files”. Sources are tried in order until one su
 | 1 | GitHub archive (codeload) | One request, about 28 MB, fastest |
 | 2 | GitHub API (zipball) | Same content, different entry point, for when codeload is throttled |
 | 3 | GitHub raw files | Per-file, about 75 MB, a different network path |
-| 4 | jsDelivr CDN mirror | A public CDN, for when GitHub is unreachable |
+| 4 | gh-proxy (China accelerator) | China-based node, measured fastest here (15 MB in under a second) |
+| 5 | jsDelivr CDN mirror | A public CDN, for when GitHub is unreachable |
+| 6 | ghfast (China accelerator) | China-based node, per-file download only |
+
+**Clicking “Download / update mod files” opens a picker first**, where you can name a source or leave it on the default “Automatic” (try each in turn, falling back when one is unavailable). Choosing a specific source uses only that one — it will not quietly switch elsewhere, so the source reported in the log is trustworthy.
 
 Each source is retried once before moving on, so one blocked or flaky endpoint causes a fallback rather than a failed update.
+
+### Trust boundary for third-party mirrors
+
+The last three entries are third-party forwarders, not the authority for this content, so the **certificate pin is enforced strictly** on them: only a signer matching the recorded value is accepted. On GitHub's own endpoints a mismatch is logged and accepted instead, so an upstream certificate rotation does not break updating.
+
+That distinction is documented in the fetcher's source (`ModFetcher.Verify`), and it is why the source list is defined at compile time rather than in a runtime config file — **the source list is a trust boundary and should not be decided by configuration**.
 
 ### Downloads are verified
 

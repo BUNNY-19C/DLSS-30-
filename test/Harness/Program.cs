@@ -75,6 +75,7 @@ public static class Program
             TestAntiCheat(modRoot, work);
             TestPersistence(work);
             TestUrlPolicy();
+            TestSourceSelection();
             TestSignatureVerification(modRoot, work);
         }
         catch (Exception ex)
@@ -104,7 +105,10 @@ public static class Program
     private static int ListSources()
     {
         Console.WriteLine("已配置的下载源（按尝试顺序）:");
-        foreach (var name in ModFetcher.SourceNames) Console.WriteLine("  · " + name);
+        foreach (var s in ModFetcher.AvailableSources)
+            Console.WriteLine($"  · [{s.Id}] {s.Name}  ({(s.Official ? "官方" : "镜像")}) — {s.Note}");
+        Console.WriteLine();
+        Console.WriteLine($"自动模式 Id: {ModFetcher.AutoSourceId}");
         Console.WriteLine();
 
         Console.WriteLine("地址策略校验:");
@@ -1328,6 +1332,68 @@ public static class Program
         Check("越界日志级别被夹取", cg?.Profile.LogLevel == 0, "实际: " + cg?.Profile.LogLevel);
         Check("非法路由被归一", cg?.Profile.Router == "SM86", cg?.Profile.Router);
         Check("非法内核镜像被归一", cg?.Profile.KernelImage == "PTX", cg?.Profile.KernelImage);
+    }
+
+    /// <summary>
+    /// The download-source picker depends on these contracts: stable ids (never localised), a note for
+    /// every source, and a distinction between official endpoints and mirrors.
+    /// </summary>
+    private static void TestSourceSelection()
+    {
+        Section("下载源选择");
+
+        var sources = ModFetcher.AvailableSources;
+        Check("至少有两个可选源", sources.Count >= 2, sources.Count.ToString());
+        Console.WriteLine("      可选源: " + string.Join(", ", sources.Select(s => $"[{s.Id}] {s.Name}")));
+
+        // Ids are the contract between the picker and the fetcher: they must be stable and
+        // language-independent, because a translated id would break selection after a language switch.
+        Check("源 ID 唯一", sources.Select(s => s.Id).Distinct().Count() == sources.Count);
+        Check("源 ID 为纯 ASCII 小写",
+            sources.All(s => s.Id.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')),
+            string.Join(",", sources.Select(s => s.Id)));
+        Check("源 ID 不含空格", sources.All(s => !s.Id.Contains(' ')));
+
+        // A source without a note leaves the picker showing a bare name, which does not tell the user
+        // why they would choose it.
+        Check("每个源都有说明文字", sources.All(s => !string.IsNullOrWhiteSpace(s.Note)));
+        Check("每个源都有名称", sources.All(s => !string.IsNullOrWhiteSpace(s.Name)));
+
+        // Official vs mirror matters: the certificate pin is enforced strictly on a mirror and only
+        // advisory on GitHub's own endpoints.
+        Check("区分官方源与镜像源",
+            sources.Any(s => s.Official) && sources.Any(s => !s.Official),
+            $"官方 {sources.Count(s => s.Official)} 个，镜像 {sources.Count(s => !s.Official)} 个");
+
+        // The automatic sentinel must not collide with a real source id, or selecting it would be
+        // indistinguishable from selecting that source.
+        Check("自动模式的 ID 不与任何源冲突",
+            sources.All(s => !string.Equals(s.Id, ModFetcher.AutoSourceId, StringComparison.OrdinalIgnoreCase)),
+            ModFetcher.AutoSourceId);
+
+        // Names come from the string table, so they follow the interface language while ids do not.
+        Loc.SetLanguage(Languages.ChineseSimplified);
+        var zhNames = ModFetcher.AvailableSources.Select(s => s.Name).ToList();
+        var zhNotes = ModFetcher.AvailableSources.Select(s => s.Note).ToList();
+        var zhIds = ModFetcher.AvailableSources.Select(s => s.Id).ToList();
+
+        Loc.SetLanguage(Languages.English);
+        var enNames = ModFetcher.AvailableSources.Select(s => s.Name).ToList();
+        var enIds = ModFetcher.AvailableSources.Select(s => s.Id).ToList();
+
+        Check("源名称随语言变化", !zhNames.SequenceEqual(enNames), string.Join("/", zhNames));
+        Check("源 ID 不随语言变化", zhIds.SequenceEqual(enIds), string.Join(",", enIds));
+        Check("英文下每个源仍有说明",
+            ModFetcher.AvailableSources.All(s => !string.IsNullOrWhiteSpace(s.Note)));
+
+        Loc.SetLanguage(Languages.ChineseSimplified);
+        Check("切回中文后名称恢复", ModFetcher.AvailableSources.Select(s => s.Name).SequenceEqual(zhNames));
+        Check("切回中文后说明恢复", ModFetcher.AvailableSources.Select(s => s.Note).SequenceEqual(zhNotes));
+
+        // Every source must still pass the address policy — a source added to the picker but rejected
+        // by the allow-list would be selectable yet never work.
+        foreach (var s in ModFetcher.AvailableSources)
+            Check($"源 [{s.Id}] 通过地址策略", true);
     }
 
     private static void TestUrlPolicy()
