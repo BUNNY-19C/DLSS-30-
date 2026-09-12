@@ -302,6 +302,12 @@ public static partial class Strings
         ["Fetch.Note.ghproxy"] = "China-based accelerator; measured fastest, handles both archive and per-file",
         ["Fetch.Note.ghfast"] = "China-based accelerator, per-file download only",
         ["Fetch.FailureItem"] = "{0}: {1}",
+        ["Fetch.ExtraStart"] = "Extra entry {0}: downloading",
+        ["Fetch.ExtraReady"] = "Extra entry {0}: ready (hash verified, from {1})",
+        ["Fetch.ExtraPresent"] = "Extra entry {0}: already present, identical to the published copy",
+        ["Fetch.ExtraKept"] = "Extra entry {0}: a different file is already present, keeping yours",
+        ["Fetch.ExtraHashMismatch"] = "hash mismatch (expected {0}, got {1})",
+        ["Fetch.ExtraFailed"] = "Extra entry {0} was not fetched: {1}. You can add it later with “Add proxy DLL…”.",
         ["Fetch.SingleSourceFailed"] = "The chosen source failed.\n     {0}\n\nTry another source, or pick “Automatic” to let it try each in turn.",
         ["Fetch.PickerTitle"] = "Choose a download source",
         ["Fetch.PickerPrompt"] = "Where should the mod files be downloaded from?",
@@ -339,7 +345,7 @@ public static partial class Strings
         ["Proxy.AddedUnsigned"] = "  unsigned or signature invalid (a local file's origin is yours to vouch for)",
         ["Proxy.AddReplaced"] = "  replaced the existing local proxy {0}",
         ["Proxy.AddFailed"] = "Could not add the file: {0}",
-        ["Proxy.ImportedSuffix"] = " (imported)",
+        ["Proxy.ImportedSuffix"] = " (extra entry)",
 
         // ── Mod source ───────────────────────────────────────────────
         ["ModSource.DirMissing"] = "folder does not exist",

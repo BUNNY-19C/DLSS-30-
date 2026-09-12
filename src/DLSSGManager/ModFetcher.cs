@@ -61,7 +61,34 @@ public static class ModFetcher
     private const string RepoPath = "sdli1995/dlssg_for_sm86";
     private const string RepoRef = "main";
 
+    /// <summary>This project's own repository, where the extra proxy builds are published.</summary>
+    private const string SelfRepo = "BUNNY-19C/DLSSG-30s-manager";
+
+    /// <summary>
+    /// Tag holding those builds. A tag rather than a branch, so the address cannot change under the
+    /// manager's feet — the pinned hash below is the second lock on the same door.
+    /// </summary>
+    private const string SelfRef = "v1.7.2";
+
     private sealed record Artifact(string RelativePath, bool Required, bool NeedsSignature);
+
+    /// <summary>
+    /// A proxy build this project publishes itself, because upstream does not ship it — the community
+    /// <c>d3d12.dll</c> entry being the case this exists for.
+    ///
+    /// <paramref name="Sha256"/> is the whole integrity guarantee. There is no certificate this project
+    /// can verify for a file it did not build, so the bytes must match the recorded hash exactly, from
+    /// whichever endpoint served them, or the download is rejected and thrown away.
+    /// </summary>
+    private sealed record Extra(string SourcePath, string DestinationPath, string Sha256);
+
+    private static readonly Extra[] Extras =
+    {
+        // Provenance, licensing and the procedure for replacing this file are documented in
+        // extra-proxies/README.md and THIRD_PARTY_NOTICES.txt.
+        new("extra-proxies/d3d12.dll", "altnative/d3d12.dll",
+            "65E6F912F5D485DC56BC6B48430DF046FF06D38B8A69595B42E316E9644F7C2B"),
+    };
 
     /// <summary>The payload the manager actually consumes, with the checks each file needs.</summary>
     private static readonly Artifact[] Payload =
@@ -94,34 +121,90 @@ public static class ModFetcher
         public string Name => Loc.T(NameKey);
     }
 
+    /// <summary>
+    /// True when the file's bytes match the pinned hash.
+    ///
+    /// Extracted so the rule that matters — a mismatch means the bytes are discarded, from whichever
+    /// endpoint they came — is exercised by a test rather than only by a live download.
+    /// </summary>
+    public static bool MatchesPin(string path, string sha256)
+    {
+        try
+        {
+            return string.Equals(DeploymentService.Sha256(path), sha256, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The published extras, for tests that check the pin against the file committed to the repository.
+    /// The two must agree, or every install would download a file the manager then throws away.
+    /// </summary>
+    public static IReadOnlyList<(string SourcePath, string DestinationPath, string Sha256)> PublishedExtras =>
+        Extras.Select(e => (e.SourcePath, e.DestinationPath, e.Sha256)).ToArray();
+
     private static readonly Source[] Sources =
     {
+        // Templates carry {repo}/{ref}/{path} rather than a baked-in repository, because the same list
+        // also serves the extras published in this project's own repository.
+        //
         // One request, compressed (~28 MB). Preferred when reachable.
         new("codeload", "Fetch.SourceCodeload", true,
-            $"https://codeload.github.com/{RepoPath}/zip/refs/heads/{RepoRef}", true),
+            "https://codeload.github.com/{repo}/zip/refs/heads/{ref}", true),
 
         // Same content through a different entry point; useful when codeload is throttled.
         new("zipball", "Fetch.SourceZipball", true,
-            $"https://api.github.com/repos/{RepoPath}/zipball/{RepoRef}", true),
+            "https://api.github.com/repos/{repo}/zipball/{ref}", true),
 
         // Per-file raw access. Slower (~78 MB uncompressed) but a distinct path from codeload.
         new("raw", "Fetch.SourceRaw", true,
-            $"https://raw.githubusercontent.com/{RepoPath}/{RepoRef}/{{0}}", false),
+            "https://raw.githubusercontent.com/{repo}/{ref}/{path}", false),
 
         // Chinese acceleration proxy. It forwards both raw files and codeload archives, and measured
         // fastest of the mirrors here (a 15 MB file in under a second), so it is tried before the CDN.
         new("ghproxy", "Fetch.SourceGhProxy", false,
-            $"https://gh-proxy.com/https://raw.githubusercontent.com/{RepoPath}/{RepoRef}/{{0}}", false),
+            "https://gh-proxy.com/https://raw.githubusercontent.com/{repo}/{ref}/{path}", false),
 
         // Public CDN, usually reachable where GitHub is not.
         new("jsdelivr", "Fetch.SourceJsDelivr", false,
-            $"https://cdn.jsdelivr.net/gh/{RepoPath}@{RepoRef}/{{0}}", false),
+            "https://cdn.jsdelivr.net/gh/{repo}@{ref}/{path}", false),
 
         // Another Chinese proxy. Verified for raw files only — it returns 403 for codeload archives, so
         // it is per-file like the two above and kept last as a final fallback.
         new("ghfast", "Fetch.SourceGhFast", false,
-            $"https://ghfast.top/https://raw.githubusercontent.com/{RepoPath}/{RepoRef}/{{0}}", false),
+            "https://ghfast.top/https://raw.githubusercontent.com/{repo}/{ref}/{path}", false),
     };
+
+    /// <summary>Builds a concrete address from a source template.</summary>
+    private static string UrlFor(Source source, string repo, string reference, string? path) =>
+        source.UrlTemplate
+            .Replace("{repo}", repo, StringComparison.Ordinal)
+            .Replace("{ref}", reference, StringComparison.Ordinal)
+            .Replace("{path}", path ?? "", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The address a source would use for the upstream archive, for tests that assert the policy holds
+    /// for every endpoint the downloader can ever contact.
+    /// </summary>
+    public static string ArchiveUrlFor(string sourceId)
+    {
+        var source = Sources.First(s => string.Equals(s.Id, sourceId, StringComparison.OrdinalIgnoreCase));
+        return UrlFor(source, RepoPath, RepoRef, null);
+    }
+
+    /// <summary>Addresses used to fetch an extra from this project's repository, per source.</summary>
+    public static List<string> ExtraUrls()
+    {
+        var result = new List<string>();
+        foreach (var source in Sources.Where(s => !s.IsArchive))
+            foreach (var extra in Extras)
+                result.Add(UrlFor(source, SelfRepo, SelfRef, extra.SourcePath));
+
+        return result;
+    }
 
     /// <summary>
     /// A source as presented to the user: a stable id to pass back, plus text in the active language.
@@ -140,6 +223,9 @@ public static class ModFetcher
     public const string AutoSourceId = "auto";
 
     public static IReadOnlyList<string> SourceNames => Sources.Select(s => s.Name).ToArray();
+
+    /// <summary>Stable source identifiers, for code and tests that need to address a source.</summary>
+    public static IReadOnlyList<string> SourceIds => Sources.Select(s => s.Id).ToArray();
 
     /// <summary>
     /// Environment variable naming a single source to use, for diagnosing one endpoint in isolation.
@@ -344,6 +430,10 @@ public static class ModFetcher
                 return r;
             }
 
+            // Extras come after the payload is known good, and never fail the attempt: they are
+            // additions, and the mod files are what the user came for.
+            await FetchExtrasAsync(source, destination, staging, r, progress, ct).ConfigureAwait(false);
+
             var copied = Publish(staging, destination);
             var version = ModSource.ReadVersion(Path.Combine(destination, ModSource.IniName));
 
@@ -374,7 +464,7 @@ public static class ModFetcher
         try
         {
             using var client = CreateClient();
-            using var response = await GetCheckedAsync(client, new Uri(source.UrlTemplate), ct).ConfigureAwait(false);
+            using var response = await GetCheckedAsync(client, new Uri(UrlFor(source, RepoPath, RepoRef, null)), ct).ConfigureAwait(false);
 
             if (response.Content.Headers.ContentLength is long declared && declared > MaxArchiveBytes)
                 throw new InvalidOperationException(Loc.T("Fetch.ArchiveTooLarge", declared / 1024 / 1024));
@@ -432,8 +522,7 @@ public static class ModFetcher
             ct.ThrowIfCancellationRequested();
             progress?.Report(Loc.T("Fetch.Downloading", artifact.RelativePath, done + 1, Payload.Length));
 
-            // {0} is the repo-relative path; already URL-safe for these names.
-            var url = new Uri(string.Format(source.UrlTemplate, artifact.RelativePath));
+            var url = new Uri(UrlFor(source, RepoPath, RepoRef, artifact.RelativePath));
             var target = Path.Combine(staging, artifact.RelativePath.Replace('/', Path.DirectorySeparatorChar));
 
             // Nested entries such as altnative/winmm.dll need their folder to exist before writing.
@@ -465,6 +554,111 @@ public static class ModFetcher
         }
 
         r.Note(Loc.T("Fetch.DownloadedCount", $"{total / 1024 / 1024.0:F1}", done, Payload.Length));
+    }
+
+    /// <summary>
+    /// Fetches the extra proxy builds this project publishes, skipping any the destination already has.
+    ///
+    /// The main source list cannot be reused as-is: codeload and the API serve archives only, and an
+    /// extra is a single file. So the user's chosen source is tried first when it can serve a file, then
+    /// the remaining per-file sources in order. Trying an endpoint the user did not pick is acceptable
+    /// *here* precisely because the content is hash-pinned — a mirror has no authority over what is
+    /// accepted, only over whether the bytes arrive.
+    /// </summary>
+    private static async Task FetchExtrasAsync(
+        Source mainSource,
+        string destination,
+        string staging,
+        OpResult r,
+        IProgress<string>? progress,
+        CancellationToken ct)
+    {
+        if (Extras.Length == 0) return;
+
+        var candidates = new List<Source>();
+        if (!mainSource.IsArchive) candidates.Add(mainSource);
+        candidates.AddRange(Sources.Where(s => !s.IsArchive && !candidates.Contains(s)));
+
+        foreach (var extra in Extras)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var name = Path.GetFileName(extra.DestinationPath);
+            var existing = Path.Combine(destination, extra.DestinationPath.Replace('/', Path.DirectorySeparatorChar));
+
+            if (File.Exists(existing))
+            {
+                // Our own earlier copy is simply up to date. A different file is the user's — their own
+                // build, or a newer one they added by hand — and is left alone.
+                r.Note(MatchesPin(existing, extra.Sha256)
+                    ? Loc.T("Fetch.ExtraPresent", name)
+                    : Loc.T("Fetch.ExtraKept", name));
+                continue;
+            }
+
+            progress?.Report(Loc.T("Fetch.ExtraStart", name));
+
+            var staged = Path.Combine(staging, extra.DestinationPath.Replace('/', Path.DirectorySeparatorChar));
+            var ok = false;
+            var failure = "";
+            var servedBy = "";
+
+            foreach (var candidate in candidates)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                try
+                {
+                    using var client = CreateClient();
+                    using var response = await GetCheckedAsync(
+                        client, new Uri(UrlFor(candidate, SelfRepo, SelfRef, extra.SourcePath)), ct).ConfigureAwait(false);
+
+                    var dir = Path.GetDirectoryName(staged);
+                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+                    await using (var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
+                    await using (var output = File.Create(staged))
+                    {
+                        var buffer = new byte[81920];
+                        long total = 0;
+                        int read;
+                        while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                        {
+                            total += read;
+                            if (total > MaxArchiveBytes) throw new InvalidOperationException(Loc.T("Fetch.ContentTooLarge"));
+                            await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                        }
+                    }
+
+                    if (!MatchesPin(staged, extra.Sha256))
+                    {
+                        var actual = DeploymentService.Sha256(staged);
+                        TryDelete(staged);
+                        failure = Loc.T("Fetch.ExtraHashMismatch", extra.Sha256, actual);
+                        continue;
+                    }
+
+                    ok = true;
+                    servedBy = candidate.Name;
+                    break;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    failure = ex.Message;
+                }
+            }
+
+            if (ok) r.Note(Loc.T("Fetch.ExtraReady", name, servedBy));
+            else
+            {
+                TryDelete(staged);
+                r.Note(Loc.T("Fetch.ExtraFailed", name, failure));
+            }
+        }
     }
 
     /// <summary>
@@ -538,6 +732,17 @@ public static class ModFetcher
             if (!File.Exists(source)) continue;
 
             CopyInto(source, Path.Combine(destination, artifact.RelativePath.Replace('/', Path.DirectorySeparatorChar)), destination);
+            copied++;
+        }
+
+        // Extras that arrived are published alongside the payload; the ones that were skipped (already
+        // present, or failed) are simply not staged.
+        foreach (var extra in Extras)
+        {
+            var source = Path.Combine(staging, extra.DestinationPath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(source)) continue;
+
+            CopyInto(source, Path.Combine(destination, extra.DestinationPath.Replace('/', Path.DirectorySeparatorChar)), destination);
             copied++;
         }
 

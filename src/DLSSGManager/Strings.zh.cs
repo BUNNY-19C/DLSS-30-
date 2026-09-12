@@ -302,6 +302,12 @@ public static partial class Strings
         ["Fetch.Note.ghproxy"] = "国内加速节点，实测最快；支持归档与逐文件",
         ["Fetch.Note.ghfast"] = "国内加速节点，仅逐文件下载",
         ["Fetch.FailureItem"] = "{0}：{1}",
+        ["Fetch.ExtraStart"] = "附加入口 {0}：下载中",
+        ["Fetch.ExtraReady"] = "附加入口 {0}：已就绪（哈希校验通过，来源 {1}）",
+        ["Fetch.ExtraPresent"] = "附加入口 {0}：已存在且与仓库版本一致",
+        ["Fetch.ExtraKept"] = "附加入口 {0}：已存在但与仓库版本不同，保留现有文件",
+        ["Fetch.ExtraHashMismatch"] = "哈希不符（期望 {0}，实际 {1}）",
+        ["Fetch.ExtraFailed"] = "附加入口 {0} 未获取：{1}。可稍后用「添加代理 DLL…」手动添加。",
         ["Fetch.SingleSourceFailed"] = "选定的下载源失败。\n     {0}\n\n可以换一个源重试，或选择「自动」让它依次尝试。",
         ["Fetch.PickerTitle"] = "选择下载源",
         ["Fetch.PickerPrompt"] = "从哪里获取 Mod 文件？",
@@ -339,7 +345,7 @@ public static partial class Strings
         ["Proxy.AddedUnsigned"] = "  未签名或签名无效（本地文件的来源由你自己确认）",
         ["Proxy.AddReplaced"] = "  已替换同名的本地代理 {0}",
         ["Proxy.AddFailed"] = "添加失败：{0}",
-        ["Proxy.ImportedSuffix"] = "（本地导入）",
+        ["Proxy.ImportedSuffix"] = "（附加入口）",
 
         // ── Mod 文件源 ───────────────────────────────────────────────
         ["ModSource.DirMissing"] = "目录不存在",

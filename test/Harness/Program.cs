@@ -77,6 +77,7 @@ public static class Program
             TestAntiCheat(modRoot, work);
             TestPersistence(work);
             TestUrlPolicy();
+            TestPublishedExtras(work);
             TestSourceSelection();
             TestThemes();
             TestSignatureVerification(modRoot, work);
@@ -1732,10 +1733,81 @@ public static class Program
         Check("拒绝 file 协议", !ModFetcher.IsAllowedAddress(new Uri("file:///C:/x")));
 
         // Every configured source must itself pass the policy: a source added to the list but
-        // rejected by the allow-list would silently never work.
-        foreach (var name in ModFetcher.SourceNames)
-            Check($"已配置源通过策略：{name}", true);
+        // rejected by the allow-list would silently never work. Both the upstream archive address and
+        // the addresses used for this project's own extras are checked, since both can be contacted.
+        foreach (var source in ModFetcher.SourceIds)
+        {
+            var archive = ModFetcher.ArchiveUrlFor(source);
+            Check($"已配置源通过策略：{source}", ModFetcher.IsAllowedAddress(new Uri(archive)), archive);
+        }
+
+        foreach (var url in ModFetcher.ExtraUrls())
+            Check($"附加入口地址通过策略：{url}", ModFetcher.IsAllowedAddress(new Uri(url)), url);
+
         Console.WriteLine("      配置的源: " + string.Join(" | ", ModFetcher.SourceNames));
+    }
+
+    /// <summary>
+    /// The extra proxy this project publishes itself. Its integrity rests on the pinned hash alone —
+    /// there is no signature this project can verify — so the pin and the file committed to the
+    /// repository must agree, or every install would download something the manager then discards.
+    /// </summary>
+    private static void TestPublishedExtras(string work)
+    {
+        Section("附加入口（仓库分发）");
+
+        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var extras = ModFetcher.PublishedExtras;
+
+        Check("至少发布了一个附加入口", extras.Count > 0, "实际: " + extras.Count);
+
+        foreach (var (sourcePath, destinationPath, pinned) in extras)
+        {
+            var name = Path.GetFileName(destinationPath);
+            var file = Path.Combine(repoRoot, sourcePath.Replace('/', Path.DirectorySeparatorChar));
+
+            Check($"{name}：固定哈希格式正确", Regex.IsMatch(pinned, "^[0-9A-Fa-f]{64}$"), pinned);
+            Check($"{name}：入口名是已知的可用入口名", ModSource.IsKnownProxyName(name), name);
+            Check($"{name}：落到 altnative\\ 下",
+                destinationPath.StartsWith("altnative/", StringComparison.OrdinalIgnoreCase), destinationPath);
+
+            Check($"{name}：仓库中存在发布文件", File.Exists(file), file);
+            if (!File.Exists(file)) continue;
+
+            Check($"{name}：仓库文件与固定哈希一致",
+                ModFetcher.MatchesPin(file, pinned),
+                $"固定 {pinned}，实际 {Sha(file)}");
+
+            Console.WriteLine($"      附加入口 {name} · {new FileInfo(file).Length / 1024 / 1024.0:F1} MB · {pinned[..16]}…");
+        }
+
+        // The pin has to reject bytes that do not match — a tampered or substituted file must never be
+        // published into the mod folder.
+        var sample = extras[0];
+        var repoFile = Path.Combine(repoRoot, sample.SourcePath.Replace('/', Path.DirectorySeparatorChar));
+        var tampered = Path.Combine(work, "extra-tampered.dll");
+
+        if (File.Exists(repoFile))
+        {
+            var bytes = File.ReadAllBytes(repoFile);
+            bytes[^1] ^= 0xFF;                                  // one flipped bit is enough
+            File.WriteAllBytes(tampered, bytes);
+
+            Check("改动一个字节即被固定哈希拒绝", !ModFetcher.MatchesPin(tampered, sample.Sha256));
+        }
+
+        Check("随机字节被固定哈希拒绝",
+            !ModFetcher.MatchesPin(MakeRandomFile(work, "extra-random.dll", 4096), sample.Sha256));
+        Check("不存在的文件被拒绝",
+            !ModFetcher.MatchesPin(Path.Combine(work, "extra-missing.dll"), sample.Sha256));
+    }
+
+    /// <summary>Writes a file of random bytes and returns its path.</summary>
+    private static string MakeRandomFile(string work, string name, int size)
+    {
+        var path = Path.Combine(work, name);
+        File.WriteAllBytes(path, RandomNumberGenerator.GetBytes(size));
+        return path;
     }
 
     /// <summary>
