@@ -13,18 +13,18 @@ A graphical manager for [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_s
 The mod is a DLL proxy: placing `version.dll` (or one of the alternative entry names) and `dlssg_sm86.ini` **beside the game's rendering executable** enables DLSS frame generation on RTX 30 series (SM86) cards.
 
 > [!IMPORTANT]
-> **Games with kernel-level anti-cheat cannot use this mod.** Such anti-cheat blocks and quarantines the proxy DLL before the game launches, so the mod cannot work, and a detection may put your account at risk. The manager detects this and blocks deployment — see [Anti-cheat](#anti-cheat-games-that-cannot-use-this-mod).
+> **Games with kernel-level anti-cheat are a risk zone.** Such anti-cheat may block or quarantine the proxy DLL, and a recorded detection may put your account at risk. The manager detects it and **warns, leaving the decision to you** — see [the anti-cheat section](#anti-cheat-risk-assessment-your-call).
 
 **[⬇ Download the latest release](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)** — installer or portable exe; neither needs .NET installed.
 
 **Highlights**
 
-- Scans Steam libraries and any folder, locating games by the `nvngx_dlssg.dll` they ship, so unrelated programs never appear
-- Per-game configuration (route, frame multiplier, sampling mode, log level), independent for each title
-- **Anti-cheat is checked when a game is added**, and a kernel-level one blocks deployment outright
-- Files displaced during deployment are backed up; restore only deletes files confirmed to belong to this project
+- Scans Steam libraries or any folder, finding games by the `nvngx_dlssg.dll` they ship, so unrelated programs never show up
+- Per-game configuration (route, frame multiplier, sampling mode, log level)
+- Kernel-level anti-cheat is detected when a game is added; the manager warns you and leaves the decision to you
+- Displaced files are backed up; restore only deletes files whose signature and hash both check out
 - Batch deploy and restore
-- Built-in downloader fetches the mod files on demand, so this repository carries no 75 MB of binaries
+- Built-in downloader, so the repository carries no 75 MB of binaries. It also fetches the `d3d12.dll` entry Zenless Zone Zero needs
 
 ---
 
@@ -37,7 +37,7 @@ The mod is a DLL proxy: placing `version.dll` (or one of the alternative entry n
 - [Anti-cheat: risk assessment, your call](#anti-cheat-risk-assessment-your-call)
 - [About GPUs](#about-gpus)
 - [Updating the mod files](#updating-the-mod-files)
-- [Adding a proxy DLL (a community entry name)](#adding-a-proxy-dll-a-community-entry-name)
+- [Extra entries: d3d12 and your own DLLs](#extra-entries-d3d12-and-your-own-dlls)
 - [Repository layout](#repository-layout)
 - [Theme and localisation](#theme-and-localisation)
 - [Building from source](#building-from-source)
@@ -83,6 +83,8 @@ Keeping them beside the program makes the folder self-contained — copy it anyw
 
 To undo it, click “Restore”. Batch actions are at the bottom of the window: “Deploy all” and “Restore all”.
 
+**Zenless Zone Zero needs a different entry**: its anti-cheat renames away the bundled names such as `version.dll`, and only `d3d12.dll` survived in testing. See [which entry it needs](#which-entry-zenless-zone-zero-needs).
+
 Releases ship a `SHA256SUMS.txt` if you want to verify the download:
 
 ```powershell
@@ -101,7 +103,7 @@ You need the .NET 8 SDK; see [Building from source](#building-from-source). The 
 
 ## Interface
 
-The toolbar shows the current mod file source and your GPU; its right-hand side holds the scan, download and “Add proxy DLL…” buttons (the last of these is covered under [adding a proxy DLL](#adding-a-proxy-dll-a-community-entry-name)). Top right has four controls:
+The toolbar shows the current mod file source and your GPU; its right-hand side holds the scan, download and “Add proxy DLL…” buttons (the last of these is covered under [extra entries](#extra-entries-d3d12-and-your-own-dlls)). Top right has four controls:
 
 - **Restart as administrator** — needed when the game lives under `C:\Program Files`, where writing requires elevation. Restarts through a UAC prompt.
 - **Open data folder** — opens `%APPDATA%\DLSSGManager`, which holds the configuration and backups.
@@ -133,8 +135,8 @@ Game folders often already contain other mods (ReShade's `dxgi.dll`, for instanc
 
 What that means in practice:
 
-- **Anti-cheat games are blocked outright** — see the next section. Kernel-level anti-cheat makes the mod ineffective and carries account risk, so deployment is refused by default.
-- **An occupied entry name is never overwritten**: the manager picks a free name from the available entries — the five bundled ones first (`version.dll` → `winmm.dll` → `dinput8.dll` → `winhttp.dll` → `dxgi.dll`), then any local entry you added. If all of them are taken it reports the conflict and leaves everything untouched.
+- **Anti-cheat games get a warning first** — kernel-level anti-cheat may block the proxy DLL and carries account risk, so the manager lays out the evidence before deploying and writes nothing until you confirm. See [the anti-cheat section](#anti-cheat-risk-assessment-your-call).
+- **An occupied entry name is never overwritten**: the manager picks a free name from the available entries: the five bundled ones first (`version.dll` → `winmm.dll` → `dinput8.dll` → `winhttp.dll` → `dxgi.dll`), then anything you added. If all of them are taken it reports the conflict and leaves everything untouched.
 - **Restore only deletes its own files**: a hash mismatch means the file is kept and reported, never deleted blindly.
 - **A running game blocks the operation**: both deploy and restore check for processes inside the render directory first.
 - **Existing manual installs can be adopted**, bringing them under management so restore works later.
@@ -143,11 +145,11 @@ What that means in practice:
 
 ## Anti-cheat: risk assessment, your call
 
-This mod is a DLL proxy, which is exactly the shape of thing kernel-level anti-cheat is built to catch, so such games are a **risk zone**: the anti-cheat may block and quarantine the proxy before the game even launches — leaving a renamed copy such as `version.dll.3787982156` behind — and may record a detection that puts your account at risk.
+The mod is a DLL proxy, which is exactly what kernel-level anti-cheat watches for, so these games are a risk zone. The anti-cheat may rename and quarantine the proxy before the game starts (leaving something like `version.dll.3787982156` behind), and it may record the detection, which is a risk to your account.
 
-Confirmed by testing: **Zenless Zone Zero** ships miHoYo's HoYoKProtect, which quarantined `version.dll` on sight, after which the game reported `The client component is running abnormally, please restart the client. Error Code:(0,11008,2195210578)`. On that same game, however, a community-built `d3d12.dll` entry works — see [adding a proxy DLL](#adding-a-proxy-dll-a-community-entry-name).
+Confirmed by testing: **Zenless Zone Zero** ships miHoYo's HoYoKProtect, which quarantined `version.dll` on sight, after which the game reported `The client component is running abnormally, please restart the client. Error Code:(0,11008,2195210578)`. A community-built `d3d12.dll` entry survives the same game; see [which entry Zenless Zone Zero needs](#which-entry-zenless-zone-zero-needs).
 
-The scan covers the game folder **and three levels of parent directories**, and reports a risk before deploying when it recognises:
+The scan covers the game folder **and three levels of parent directories** and recognises:
 
 | Anti-cheat | Indicators |
 |---|---|
@@ -160,25 +162,25 @@ The scan covers the game folder **and three levels of parent directories**, and 
 | Riot Vanguard | `vgk.sys`, `vgc.exe` |
 | XIGNCODE3 | `x3.xem`, `XignCode` |
 
-Detection matches **both files and directories** (Tencent ACE typically ships as an `AntiCheatExpert\` folder), and walks up three parent levels, because anti-cheat often sits in the game root rather than the render directory. Any `.sys` kernel driver in the game folder is also reported — no shipping game needs one — which catches vendors not in the table above. Windows' own files such as `pagefile.sys` are not misreported.
+Detection matches **both files and directories** (Tencent ACE usually ships as an `AntiCheatExpert\` folder) and walks up three parent levels, since anti-cheat usually sits in the game root rather than the render directory. Any `.sys` kernel driver in the game folder is reported too (no shipping game needs one), which catches vendors missing from the table. Windows' own files such as `pagefile.sys` are not misreported.
 
-Before scanning, the folder you picked is **resolved to the actual render directory**. That step is not optional: Overwatch keeps its anti-cheat in `E:\Overwatch\_retail_\`, so pointing at the outer `E:\Overwatch` and scanning upwards would miss `NeacSafe64.sys` entirely — verified in practice.
+The folder you pick is **resolved to the actual render directory** before scanning. Skip that and the walk starts too high and misses the anti-cheat entirely: Overwatch keeps its own in `E:\Overwatch\_retail_\`, so pointing at the outer `E:\Overwatch` never sees `NeacSafe64.sys`. Verified in practice.
 
-When a kernel-level anti-cheat is found, the manager **warns rather than forbids**:
+When a kernel-level anti-cheat turns up, the manager warns rather than forbids:
 
-- **A prompt appears as soon as the game is added** (several at once are summarised in a single dialog rather than one popup each);
-- an orange warning bar appears at the top of the detail panel;
-- “Deploy to this game” asks for confirmation, **with “No” preselected**; the write happens only after you agree;
-- “Deploy all” lists such games separately in its confirmation and deploys them along with the rest once you agree;
-- “Restore” is always available and cleans up leftovers.
+- one prompt when the game is added (several at once are merged into a single dialog);
+- an orange warning bar at the top of the detail panel;
+- “Deploy to this game” asks for confirmation with “No” preselected, and nothing is written until you agree;
+- “Deploy all” lists these games separately in its confirmation and includes them once you agree;
+- “Restore” stays available to clean up leftovers.
 
-> **Why it is not disabled**: the scan can tell *whether* anti-cheat is present, not *whether it will block the entry name you chose*. On Zenless Zone Zero `version.dll` is quarantined while `d3d12.dll` works — a judgement only you can make, so the manager lays out the evidence and the consequences instead.
+The scan can tell *whether* anti-cheat is present, not *whether it will block the entry name you chose*. Zenless Zone Zero quarantines `version.dll` and leaves `d3d12.dll` alone. That call is yours, so the manager shows the evidence and the consequences and stops there.
 
 **Measured results on the development machine**, for reference:
 
 | Game | Anti-cheat | Result |
 |---|---|---|
-| Zenless Zone Zero | miHoYo HoYoKProtect | ⚠ bundled `version.dll` quarantined; community `d3d12.dll` works |
+| Zenless Zone Zero | miHoYo HoYoKProtect | ⚠ bundled entries get quarantined; use `d3d12.dll` ([below](#which-entry-zenless-zone-zero-needs)) |
 | War Thunder | BattlEye | untested |
 | Arknights: Endfield | Tencent ACE | untested |
 | Overwatch | NetEase NEAC | untested |
@@ -186,15 +188,15 @@ When a kernel-level anti-cheat is found, the manager **warns rather than forbids
 
 For the four with anti-cheat the manager warns before deploying, and whether to deploy is your decision.
 
-**Monster Hunter Wilds is a different case**: it has no anti-cheat and the mod loads successfully (its log shows four DLSSG requests taken over), but the game then crashed (`MonsterHunterWilds.exe + 0xa4d69d0`; switching mod versions, updating the DLSS runtime and turning off the in-game FG toggle all made no difference).
+**Monster Hunter Wilds is another matter**: no anti-cheat, and the mod did load (the log shows four DLSSG requests taken over), but the game then crashed (`MonsterHunterWilds.exe + 0xa4d69d0`; switching mod versions, updating the DLSS runtime and turning off the in-game FG toggle changed nothing).
 
-**The cause has been identified: the [REFramework](https://github.com/praydog/REFramework) prerequisite was missing** — the mod framework RE Engine games rely on; Wilds uses its `MHWILDS` package. So that crash was not a machine-specific incompatibility but a prerequisite that was never installed. Installing it is **manual**, because it is a separate project and the manager does not install it for you: download `MHWILDS.zip` from REFramework's releases and extract `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework\` next to `MonsterHunterWilds.exe`. The manager sees `dinput8.dll` is taken and falls back to `version.dll` for its own proxy entry, so the two coexist.
+**The cause was a missing prerequisite: [REFramework](https://github.com/praydog/REFramework)** — the mod framework RE Engine games use; Wilds takes its `MHWILDS` package. So that crash had nothing to do with this machine being incompatible. The prerequisite has to be installed by hand, since it belongs to another project and the manager does not install it: grab `MHWILDS.zip` from REFramework's releases and extract `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework\` next to `MonsterHunterWilds.exe`. The manager then finds `dinput8.dll` taken and moves to `version.dll` for its own proxy, so the two live side by side.
 
-Re-testing with the prerequisite installed is in progress; this section will be updated once the result is confirmed.
+Re-testing with the prerequisite installed has not produced a result yet.
 
 **If you already deployed**: click “Restore”. The manager recognises and removes the renamed copies anti-cheat leaves behind (only files confirmed by signature or hash to be ours), along with the INI. The status column reports this as “quarantined by anti-cheat” rather than a plain missing file.
 
-**After deploying to a game with anti-cheat**: if the game errors out or frame generation does not appear, that entry name is being blocked — try another entry, or just click “Restore”. The account risk of a recorded detection is yours to carry.
+**After deploying to a game with anti-cheat**: if the game errors out or frame generation does not appear, that entry name is being blocked; try another entry or just click “Restore”. The account risk of a recorded detection is yours to carry.
 
 **Contributing results**: the [compatibility report](https://github.com/BUNNY-19C/DLSSG-30s-manager/issues/new?template=game_compatibility.yml) template is there for both working and failing cases — failures are just as useful to others.
 
@@ -207,18 +209,18 @@ The mod's SM86 path was validated on real hardware by the author on an **RTX 308
 Worth knowing:
 
 - **RTX 40/50 series do not need it**: Ada and Blackwell support DLSS frame generation natively. The manager says so when it detects one.
-- **VRAM overhead** scales with output resolution: roughly 320–340 MiB at 1080p, 490–520 MiB at 1440p and 700–770 MiB at 4K. Insufficient headroom causes occasional stutter even when the average frame rate looks fine.
-- **No 6X, no dynamic multiplier**, and no Reflex Warp support.
-- **Antivirus may flag it**: DLL proxying plus hooking is the kind of behaviour heuristics watch for. All five DLLs carry a self-signed certificate (visible under file properties → Digital Signatures), but a self-signed certificate grants no default Windows trust and does not prevent alerts.
-- **Enable frame generation in the game** after deploying; the mod does not turn it on by itself.
+- **VRAM** scales with output resolution: roughly 320–340 MiB at 1080p, 490–520 MiB at 1440p and 700–770 MiB at 4K. Without headroom you get occasional stutter even when the average frame rate looks fine.
+- **No 6X, no dynamic multiplier**, and no Reflex Warp.
+- **Antivirus may flag it**: DLL proxying plus hooking is the kind of behaviour heuristics watch for. All five DLLs carry a self-signed certificate (file properties → Digital Signatures), but self-signing gets no default Windows trust and does not prevent alerts.
+- **Turn frame generation on in the game** after deploying; the mod does not enable it for you.
 
 ### The architecture comes from the hardware ID, not the GPU name
 
 The manager reads the **PCI device ID** to decide between the SM86 and SM75 routes; the product name is only cross-checked.
 
-That is not needless caution: the GPU name lives in the registry and can be rewritten by tools, while the device ID is bound to the physical chip. One machine encountered in testing reported `RTX 4090` (Ada) in the registry while hardware ID `2208` was actually an RTX 3080 Ti (Ampere) — judging by name would have produced the wrong conclusion, "a 40-series card does not need this mod", whereas the hardware ID gives the right one.
+Not needless caution: the name lives in the registry and tools can rewrite it, while the device ID is bound to the physical chip. One machine we tested reported `RTX 4090` (Ada) in the registry while hardware ID `2208` was in fact a 3080 Ti (Ampere). Judging by name would have concluded "a 40-series card does not need this mod"; the hardware ID gives the right answer.
 
-When the two disagree, the manager warns explicitly and suggests restoring the GPU name: a wrong name is not merely cosmetic, because drivers and games make functional decisions based on it.
+When the two disagree the manager warns and suggests putting the name back: a wrong name is not cosmetic, because drivers and games make functional decisions from it.
 
 ---
 
@@ -226,7 +228,7 @@ When the two disagree, the manager warns explicitly and suggests restoring the G
 
 Click “Download / update mod files”. Sources are tried in order until one succeeds:
 
-> Besides the upstream mod files, this step also fetches the **extra entry** `d3d12.dll` distributed by this repository (about 10 MB, verified against a pinned hash, skipped when already present) — see [adding a proxy DLL](#adding-a-proxy-dll-a-community-entry-name).
+> Besides the upstream mod files, this step also fetches `d3d12.dll` from this repository (about 10 MB, verified against a pinned hash, skipped if already present) — the entry Zenless Zone Zero needs. See [extra entries](#extra-entries-d3d12-and-your-own-dlls).
 
 | Order | Source | Notes |
 |---|---|---|
@@ -237,7 +239,7 @@ Click “Download / update mod files”. Sources are tried in order until one su
 | 5 | jsDelivr CDN mirror | A public CDN, for when GitHub is unreachable |
 | 6 | ghfast (China accelerator) | China-based node, per-file download only |
 
-**Clicking “Download / update mod files” opens a picker first**, where you can name a source or leave it on the default “Automatic” (try each in turn, falling back when one is unavailable). Choosing a specific source uses only that one — it will not quietly switch elsewhere, so the source reported in the log is trustworthy.
+**Clicking “Download / update mod files” opens a picker first**, where you can name a source or leave it on the default “Automatic” (try each in turn, falling back when one is unavailable). Choosing a specific source uses only that one and will not quietly switch elsewhere, so the source in the log is trustworthy.
 
 Each source is retried once before moving on, so one blocked or flaky endpoint causes a fallback rather than a failed update.
 
@@ -245,7 +247,7 @@ Each source is retried once before moving on, so one blocked or flaky endpoint c
 
 The last three entries are third-party forwarders, not the authority for this content, so the **certificate pin is enforced strictly** on them: only a signer matching the recorded value is accepted. On GitHub's own endpoints a mismatch is logged and accepted instead, so an upstream certificate rotation does not break updating.
 
-That distinction is documented in the fetcher's source (`ModFetcher.Verify`), and it is why the source list is defined at compile time rather than in a runtime config file — **the source list is a trust boundary and should not be decided by configuration**.
+That distinction is documented in the fetcher's source (`ModFetcher.Verify`), and it is also why the source list is defined at compile time rather than in a runtime config file: the list is itself a trust boundary.
 
 ### Downloads are verified
 
@@ -259,23 +261,33 @@ That last point matters for the mirror: a mirror is not the authority for the co
 
 You can also place the files yourself: put `version.dll`, `dlssg_sm86.ini` and `altnative\` into `mod\`; the manager recognises them by the folder structure. See [docs/mod-files.md](docs/mod-files.md).
 
-## Adding a proxy DLL (a community entry name)
+## Extra entries: d3d12 and your own DLLs
 
-This project ships five entry names. On some games a protection module claims those names first — **Zenless Zone Zero** is one — so the community builds other entries, most commonly `d3d12.dll`: the game loads it dynamically when it initialises its DX12 backend, by which point the proxy gets a chance to load.
+Upstream ships five entry names: `version.dll`, `winmm.dll`, `dinput8.dll`, `winhttp.dll`, `dxgi.dll`. An entry name is simply the DLL name the game will load; the proxy only enters the process if the game loads that name. Some games' protection modules watch those five, so the community builds other entries. `d3d12.dll` is the common one, because the game loads it dynamically when it initialises its DX12 backend, by which point the protection module has already claimed its names.
 
-**`d3d12.dll` ships with this repository, so there is nothing to prepare by hand**: “Download / update mod files” fetches it (the installer does the same when its *Mod files* task is ticked), places it at `mod\altnative\d3d12.dll`, and it then appears in every game's “Proxy entry” picker marked *(extra entry)*.
+**This repository ships that file, so there is nothing to hunt for.** “Download / update mod files” fetches it (the installer's *Mod files* task does the same) and drops it at `mod\altnative\d3d12.dll`, after which it shows up in every game's “Proxy entry” picker.
 
-The manager cannot verify a signature for that file — it did not build it — so it pins a **SHA-256** instead: bytes that do not match are discarded, whichever mirror served them. The hash lives in the source (`ModFetcher.Extras`); the file and its provenance are documented in [extra-proxies/README.md](extra-proxies/README.md).
+The manager has no signature it can verify for that file, so it pins a SHA-256 instead: bytes that do not match are thrown away, whichever mirror served them. The hash lives in the source (`ModFetcher.Extras`); provenance and composition are in [extra-proxies/README.md](extra-proxies/README.md).
 
-To use a **different** entry DLL (your own build, or another community one), click “**Add proxy DLL…**” in the toolbar and pick the file. The manager then:
+### Which entry Zenless Zone Zero needs
 
-- copies it into `mod\altnative\` **under its own file name** — the name *is* the entry name, the DLL name the game resolves, so it cannot be changed;
-- reads the **signer** and writes it to the log (the certificate subject when the signature is intact, an explicit “unsigned” note otherwise). It does not vouch for the origin: the file is yours, so the origin is yours to confirm;
-- lists it from then on in every game's “Proxy entry” picker, marked *(extra entry)*, deployable and removable with the normal buttons. Restore removes it by the SHA256 recorded at deploy time and touches nothing else.
+Zenless Zone Zero is the case where you must switch entries. Its HoYoKProtect watches the game folder and renames away anything called `version.dll` or another bundled entry name, after which the game reports `Error Code:(0,11008,2195210578)`. Only the community-built `d3d12.dll` survived in testing.
 
-Two limits: the five bundled names cannot be replaced (that would displace the official builds every signature check depends on), and a name outside the known set (`version` / `winmm` / `dinput8` / `winhttp` / `dxgi` / `d3d12`) triggers a warning that the game will most likely never load it — continuing is your call. If `mod\altnative\d3d12.dll` already exists with different contents, the downloader **keeps your file**, so dropping in your own build is safe.
+There is exactly one thing to do: set “Proxy entry” from *Automatic* to `d3d12.dll` and deploy. The manager has already downloaded that DLL, so there is nowhere else to look for it.
 
-> **Why the name cannot be arbitrary**: an entry name is “a DLL name the game will load”. Get it right and the proxy enters the game process; get it wrong and deploying does nothing at all. It is also why the manager will **not** simply rename `version.dll` to `d3d12.dll`: each build exports only the system API surface of the name it stands in for, so the game's D3D12 imports would find no implementation and the game would not start.
+One aside: third-party Zenless Zone Zero bundles usually also carry two NVIDIA runtime DLLs (`nvngx_dlss.dll` and `nvngx_dlssg.dll`, version 310.9.1). The manager only handles the proxy and the INI and never touches those two. If frame generation does not appear with the proxy and INI alone, copy them into the game folder by hand as well, keeping a backup of the game's own copies first.
+
+### Using your own DLL
+
+For your own build, or another community one, click “Add proxy DLL…” in the toolbar and pick the file:
+
+- it is copied into `mod\altnative\` under its own file name. The name cannot change: it is what the game looks for;
+- the manager only reads the signer into the log (the certificate subject if there is one, an explicit "unsigned" if not). The file is yours, so its origin is yours to vouch for;
+- from then on it appears in the entry picker like the bundled names and can be deployed and removed with the normal buttons. Restore deletes it by the SHA256 recorded at deploy time and leaves everything else alone.
+
+Two limits: the five bundled names cannot be replaced, since the signature check depends on them, and a name outside the known set (those five plus `d3d12.dll`) triggers a note that the game most likely never loads it, which leaves the decision with you. Also, if `mod\altnative\d3d12.dll` already exists with different contents, the downloader keeps your copy instead of overwriting it.
+
+Last thing, on why the name matters so much: each build exports only the system API surface of the name it stands in for. The manager will not rename `version.dll` to `d3d12.dll` and deploy it — the game's D3D12 imports would find no implementation and the game would not start at all.
 
 ---
 
@@ -305,13 +317,13 @@ Runtime data:
 
 ## Theme and localisation
 
-**Theme**: dark and light palettes, switched from the right end of the toolbar, applied immediately and remembered (`InterfaceTheme` in `library.json`). Both live under `src/DLSSGManager/Themes/` and the interface references them through `DynamicResource` — dynamic is required, because a static reference is resolved when the element is created and most of the window would stay in the old colours after a switch.
+**Theme**: dark and light palettes, switched from the right end of the toolbar, applied immediately and remembered (`InterfaceTheme` in `library.json`). Both live under `src/DLSSGManager/Themes/` and the interface references them with `DynamicResource` — that has to be dynamic, because a static reference is resolved when the element is created and most of the window would keep the old colours after a switch.
 
-The light theme is not an inversion of the dark one; the values are chosen again, because a green or orange that reads well on a dark background is too light on white. A test checks that both themes define the same keys and validates the contrast of each text/background pair (7:1 for body text, 4.5:1 for secondary), and another check ensures no interface file or code path hard-codes a colour — a control that misses theming keeps the old palette after a switch, which is easy to overlook by eye.
+The light theme is not the dark one inverted; the values are picked again, since a green or orange that reads well on dark is too light on white. A test checks that both themes define the same keys and computes the contrast of each text/background pair (7:1 for body text, 4.5:1 for secondary). Another check keeps colours out of the interface files and code — a control that misses theming only shows it after a switch, and that is easy to miss by eye.
 
-**Localisation**: Simplified Chinese and English, switched from the right end of the toolbar, applied immediately and remembered. The installer wizard also asks for its language first.
+**Localisation**: Simplified Chinese and English, same toolbar switch, applied immediately and remembered. The installer wizard asks for its language first.
 
-Both tables live in `src/DLSSGManager/Strings.*.cs` and must define exactly the same keys — a test compares them, so a missing translation fails the build rather than surfacing a raw key in the interface. Placeholder consistency (`{0}`) is checked the same way, so arguments cannot end up in the wrong order in one language.
+Both tables live in `src/DLSSGManager/Strings.*.cs` and must define exactly the same keys — a test compares them, so a missing translation fails the suite instead of showing a raw key in the interface. Placeholders (`{0}`) are compared the same way, so arguments cannot end up in the wrong order in one language.
 
 ---
 
