@@ -184,15 +184,15 @@ The scan can tell *whether* anti-cheat is present, not *whether it will block th
 | War Thunder | BattlEye | untested |
 | Arknights: Endfield | Tencent ACE | untested |
 | Overwatch | NetEase NEAC | untested |
-| Monster Hunter Wilds | none | ⚠ crashes without the REFramework prerequisite — see below |
+| Monster Hunter Wilds | none | ✅ works once the REFramework prerequisite is installed (4X, no errors) |
 
 For the four with anti-cheat the manager warns before deploying, and whether to deploy is your decision.
 
-**Monster Hunter Wilds is another matter**: no anti-cheat, and the mod did load (the log shows four DLSSG requests taken over), but the game then crashed (`MonsterHunterWilds.exe + 0xa4d69d0`; switching mod versions, updating the DLSS runtime and turning off the in-game FG toggle changed nothing).
+**Monster Hunter Wilds**: no anti-cheat, but the mod crashed it every time (`MonsterHunterWilds.exe + 0xa4d69d0`; switching mod versions, updating the DLSS runtime and turning off the in-game FG toggle changed nothing).
 
-**The cause was a missing prerequisite: [REFramework](https://github.com/praydog/REFramework)** — the mod framework RE Engine games use; Wilds takes its `MHWILDS` package. So that crash had nothing to do with this machine being incompatible. The prerequisite has to be installed by hand, since it belongs to another project and the manager does not install it: grab `MHWILDS.zip` from REFramework's releases and extract `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework\` next to `MonsterHunterWilds.exe`. The manager then finds `dinput8.dll` taken and moves to `version.dll` for its own proxy, so the two live side by side.
+**The cause was a missing prerequisite: [REFramework](https://github.com/praydog/REFramework)** — the mod framework RE Engine games use; Wilds takes its `MHWILDS` package. With it installed the test passed: the manager deploys as usual (proxy + INI), `dinput8.dll` goes to the framework and the proxy falls back to `version.dll`, frame generation works in game, the mod's log shows zero errors and three generated frames per real frame (4X), and it shuts down cleanly.
 
-Re-testing with the prerequisite installed has not produced a result yet.
+The prerequisite is installed by hand, since it belongs to another project: grab `MHWILDS.zip` from REFramework's releases and extract `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework\` next to `MonsterHunterWilds.exe`.
 
 **If you already deployed**: click “Restore”. The manager recognises and removes the renamed copies anti-cheat leaves behind (only files confirmed by signature or hash to be ours), along with the INI. The status column reports this as “quarantined by anti-cheat” rather than a plain missing file.
 

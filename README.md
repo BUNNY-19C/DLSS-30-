@@ -182,15 +182,15 @@ mod 是 DLL 代理，内核级反作弊专盯这个，所以这类游戏算风�
 | 战争雷霆 | BattlEye | 未测试 |
 | 终末地 | 腾讯 ACE | 未测试 |
 | 守望先锋 | 网易 NEAC | 未测试 |
-| 怪物猎人荒野 | 无 | ⚠ 缺前置 REFramework 时崩溃，见下 |
+| 怪物猎人荒野 | 无 | ✅ 装上前置 REFramework 后可用（4X，无错误） |
 
 带反作弊的四款，程序都会在部署前提示风险，是否部署由你决定。
 
-**怪物猎人荒野是另一回事**：它没有反作弊，mod 也确实加载上了（日志里接过 4 次 DLSSG 请求），但游戏随后崩溃（`MonsterHunterWilds.exe + 0xa4d69d0`；换 mod 版本、更新 DLSS 运行库、关掉游戏内的 FG 开关都没用）。
+**怪物猎人荒野**：没有反作弊，但装上 mod 后必崩（`MonsterHunterWilds.exe + 0xa4d69d0`，换 mod 版本、更新 DLSS 运行库、关掉游戏内 FG 开关都没用）。
 
-**原因是缺前置 [REFramework](https://github.com/praydog/REFramework)**，也就是 RE Engine 游戏的 mod 框架（怪猎用它的 `MHWILDS` 包）。所以那次崩溃跟"本机不兼容"无关，就是前置没装。前置得手动装（那是另一个项目，管理器不代装）：从 REFramework 的 Releases 下 `MHWILDS.zip`，把 `dinput8.dll`、`openvr_api.dll`、`openxr_loader.dll`、`reframework\` 解压到 `MonsterHunterWilds.exe` 旁边。装好后管理器会发现 `dinput8.dll` 被占了，自动改用 `version.dll`，两个代理各占一个名字。
+**原因是缺前置 [REFramework](https://github.com/praydog/REFramework)**，RE Engine 游戏的 mod 框架（怪猎用它的 `MHWILDS` 包）。装上之后实测通过：管理器照常部署（代理 + INI），`dinput8.dll` 让给框架、代理自动改用 `version.dll`，游戏内帧生成正常，mod 日志全程 0 错误、每个实际帧生成 3 个插帧（4X），退出时正常释放。
 
-装上前置的复测还没出结果。
+前置要手动装，它属于另一个项目，管理器不代装：从 REFramework 的 Releases 下载 `MHWILDS.zip`，把 `dinput8.dll`、`openvr_api.dll`、`openxr_loader.dll`、`reframework\` 解压到 `MonsterHunterWilds.exe` 旁边即可。
 
 **已经装过了怎么办**：点「一键恢复」。程序能识别并清理反作弊留下的改名副本（只删哈希或签名确认属于本项目的文件），同时移除 INI。状态栏会把这种情况显示为"已被反作弊隔离"而不是普通缺失。
 
