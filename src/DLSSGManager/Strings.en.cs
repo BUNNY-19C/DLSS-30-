@@ -29,6 +29,8 @@ public static partial class Strings
         ["Toolbar.ScanFolder"] = "Scan folder…",
         ["Toolbar.UpdateMod"] = "Download / update mod files",
         ["Toolbar.UpdateModTip"] = "Fetches dlssg_for_sm86 from several mirrors and verifies the signature before writing",
+        ["Toolbar.AddProxy"] = "Add proxy DLL…",
+        ["Toolbar.AddProxyTip"] = "Add a community-built proxy (d3d12.dll, for instance) to the entry-name list so it can be deployed like the bundled ones",
         ["Toolbar.RestartAdmin"] = "Restart as administrator",
         ["Toolbar.AlreadyAdmin"] = "Running as administrator",
         ["Toolbar.OpenDataDir"] = "Open data folder",
@@ -89,7 +91,7 @@ public static partial class Strings
         ["Detail.DetectSearching"] = "— Looking for the render directory under {0}",
         ["Detail.SettingSummary"] = "  route {0} / {1} / up to {2}X / approximate sampling {3} / log {4}",
         ["Detail.BackupCount"] = "{0} original file(s) backed up",
-        ["Detail.EntriesTaken"] = "All five proxy entry names (version/winmm/dinput8/winhttp/dxgi) are already taken in this game folder. Pick one manually in the game's settings, or remove the mod occupying it.",
+        ["Detail.EntriesTaken"] = "Every available entry name is already taken in this game folder (version / winmm / dinput8 / winhttp / dxgi, plus any local entries you added). Pick one manually in the game's settings, or remove the mod occupying it.",
 
         // ── Actions ──────────────────────────────────────────────────
         ["Action.Deploy"] = "Deploy to this game",
@@ -121,10 +123,10 @@ public static partial class Strings
         ["Deploy.GameRunning"] = "The game is running. Close it completely before deploying: {0}",
         ["Deploy.SourceUnavailable"] = "Mod file source unusable: {0}{1}",
         ["Deploy.SourceMissingHint"] = " (folder does not exist). Use “Download / update mod files” in the toolbar.",
-        ["Deploy.AllProxiesTaken"] = "All five proxy entry names (version/winmm/dinput8/winhttp/dxgi) are already taken in this game folder. Pick one manually in the game's settings, or remove the mod occupying it.",
+        ["Deploy.AllProxiesTaken"] = "Every available entry name is already taken in this game folder (version / winmm / dinput8 / winhttp / dxgi, plus any local entries you added). Pick one manually in the game's settings, or remove the mod occupying it.",
         ["Deploy.InvalidProxyName"] = "“{0}” is not a valid entry name. Choose one from the list.",
         ["Deploy.NoPermission"] = "No write permission. Restart the manager as administrator.",
-        ["Deploy.ProxyTaken"] = "All five entry names are taken ({0} is used by another mod). Pick one manually in the game's settings, or remove the mod occupying it.",
+        ["Deploy.ProxyTaken"] = "Entry name {0} is used by another mod. Pick one manually in the game's settings, or remove the mod occupying it.",
         ["Deploy.BlockedKernel"] = "Deployment blocked: {0} ({1}).\n     Kernel-level anti-cheat blocks and quarantines proxy DLLs before the game launches, so the mod cannot work here, and a detection may put your account at risk. Prefer the game's own frame generation.\n     If you understand the risk, you can still deploy from the confirmation dialog.",
         ["Deploy.ConfirmTitle"] = "Confirm deployment",
         ["Deploy.BlockedTooltip"] = "This game uses kernel-level anti-cheat, so the mod cannot work here",
@@ -322,6 +324,22 @@ public static partial class Strings
         ["Fetch.SkipLog"] = "Automatic download skipped. Use “Download / update mod files” when needed.",
         ["Fetch.NotReadyLog"] = "Mod file source not ready: mod files have not been fetched. Use “Download / update mod files”.",
         ["Fetch.IncompleteLog"] = "Mod file source incomplete: {0}",
+
+        // ── Adding a proxy DLL (an entry the user supplies)───────────
+        ["Proxy.AddTitle"] = "Add proxy DLL",
+        ["Proxy.AddFilter"] = "DLL files (*.dll)|*.dll",
+        ["Proxy.AddNeedSource"] = "Fetch the mod files first (“Download / update mod files” in the toolbar); the proxy is stored beside them.",
+        ["Proxy.AddNeedDll"] = "Choose a .dll file.",
+        ["Proxy.AddFileMissing"] = "File does not exist: {0}",
+        ["Proxy.AddReserved"] = "“{0}” is one of this project's own entry names and cannot be replaced.",
+        ["Proxy.AddUnknownName"] = "“{0}” is not one of the known entry names (version / winmm / dinput8 / winhttp / dxgi / d3d12). Games rarely load anything else, so deploying it will most likely do nothing.\n\nAdd it anyway?",
+        ["Proxy.Added"] = "Added proxy entry {0} → {1}",
+        ["Proxy.AddedFile"] = "  wrote {0} ({1} KB)",
+        ["Proxy.AddedSigner"] = "  signer: {0}",
+        ["Proxy.AddedUnsigned"] = "  unsigned or signature invalid (a local file's origin is yours to vouch for)",
+        ["Proxy.AddReplaced"] = "  replaced the existing local proxy {0}",
+        ["Proxy.AddFailed"] = "Could not add the file: {0}",
+        ["Proxy.ImportedSuffix"] = " (imported)",
 
         // ── Mod source ───────────────────────────────────────────────
         ["ModSource.DirMissing"] = "folder does not exist",

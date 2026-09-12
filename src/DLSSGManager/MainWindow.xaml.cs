@@ -23,6 +23,12 @@ public partial class MainWindow : Window
     private bool _suppressThemeChange;
 
     /// <summary>
+    /// Set while the entry-name picker is being rebuilt: replacing the items raises SelectionChanged
+    /// with a value the user never chose, which would otherwise overwrite the game's preference.
+    /// </summary>
+    private bool _suppressProxyChange;
+
+    /// <summary>
     /// Whether the mod file source is usable, or null when nothing has been fetched yet. Kept so the
     /// badge colours can be re-applied after a theme switch, since they are set from code.
     /// </summary>
@@ -52,6 +58,7 @@ public partial class MainWindow : Window
         BuildLocalizedCombos();
         BuildLanguageCombo();
         BuildThemeCombo();
+        BuildProxyCombo();
 
         // Bound straight to the persisted collection: no copy can drift out of sync with the file.
         GameList.ItemsSource = _data.Games;
@@ -116,6 +123,46 @@ public partial class MainWindow : Window
         _suppressThemeChange = false;
     }
 
+    /// <summary>
+    /// Fills the entry-name picker from the current mod source: the project's own five, then any proxy
+    /// DLLs the user has added.
+    ///
+    /// Rebuilt rather than declared in XAML because the list changes when a file is added, and because
+    /// an imported entry carries a suffix that has to follow the interface language. The value written
+    /// back for a pick is the entry name itself — never the label, which is translated.
+    /// </summary>
+    private void BuildProxyCombo()
+    {
+        var wanted = Selected?.PreferredProxy ?? ProxyCombo.SelectedValue as string;
+
+        _suppressProxyChange = true;
+        try
+        {
+            var found = ModSourceLocator.FindExisting(_data.ModSourcePath);
+            var imported = found is null ? Array.Empty<string>() : new ModSource(found).ImportedProxies.ToArray();
+
+            ProxyCombo.Items.Clear();
+            ProxyCombo.Items.Add(new ComboBoxItem { Content = Loc.T("Common.Auto"), Tag = DeploymentService.AutoProxy });
+
+            foreach (var name in ModSource.ProxyCandidates.Concat(imported))
+            {
+                var label = ModSource.ProxyCandidates.Contains(name, StringComparer.OrdinalIgnoreCase)
+                    ? name
+                    : name + Loc.T("Proxy.ImportedSuffix");
+
+                ProxyCombo.Items.Add(new ComboBoxItem { Content = label, Tag = name });
+            }
+
+            // A preference this source can no longer provide (its DLL was deleted from the mod folder)
+            // leaves the picker empty; the deploy path reports it rather than silently choosing another.
+            if (wanted is not null) ProxyCombo.SelectedValue = wanted;
+        }
+        finally
+        {
+            _suppressProxyChange = false;
+        }
+    }
+
     private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressThemeChange) return;
@@ -174,6 +221,7 @@ public partial class MainWindow : Window
 
         // Text set from code does not follow the bindings, so it is re-applied here.
         BuildLocalizedCombos();
+        BuildProxyCombo();
         RefreshCodeText();
         RefreshModSource();
         UpdateStatusCard();
@@ -313,7 +361,7 @@ public partial class MainWindow : Window
         _modSourceValid = source.IsValid;
         ColorFromCode();
         ModSourceText.ToolTip = source.IsValid
-            ? Loc.T("Toolbar.ModReadyTip", Loc.Join(source.Proxies))
+            ? Loc.T("Toolbar.ModReadyTip", Loc.Join(source.AvailableProxies))
             : source.ValidationMessage;
 
         if (!source.IsValid) _log.Write(Loc.T("Fetch.IncompleteLog", source.ValidationMessage));
@@ -331,6 +379,54 @@ public partial class MainWindow : Window
         if (picker.ShowDialog() != true) return;
 
         DownloadModFiles(target, update: true, picker.SelectedSourceId);
+    }
+
+    /// <summary>
+    /// Adds a proxy DLL the user picked to the entry-name list, so it can be deployed like the bundled
+    /// entries — the case this exists for is a community build such as d3d12.dll, which this project
+    /// does not ship.
+    ///
+    /// The manager did not download the file and cannot vouch for it. What it does is copy it
+    /// faithfully, say what signature (if any) it carries, and warn when the name is one games never
+    /// load, because then the deployment would simply do nothing.
+    /// </summary>
+    private void AddProxy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy) { _log.Write(Loc.T("Scan.Busy")); return; }
+
+        var found = ModSourceLocator.FindExisting(_data.ModSourcePath);
+        if (found is null)
+        {
+            _log.Write(Loc.T("Proxy.AddNeedSource"));
+            MessageBox.Show(this, Loc.T("Proxy.AddNeedSource"), Loc.T("Proxy.AddTitle"),
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dialog = new OpenFileDialog { Title = Loc.T("Proxy.AddTitle"), Filter = Loc.T("Proxy.AddFilter") };
+        if (dialog.ShowDialog() != true) return;
+
+        var name = Path.GetFileName(dialog.FileName);
+
+        // The entry name is the DLL name the game resolves, so a name nothing loads means the mod never
+        // runs. The file is the user's, which makes the decision theirs too; the manager only makes the
+        // consequence explicit before the file is copied in.
+        if (!ModSource.IsKnownProxyName(name))
+        {
+            if (MessageBox.Show(this, Loc.T("Proxy.AddUnknownName", name), Loc.T("Proxy.AddTitle"),
+                    MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+                return;
+        }
+
+        var result = ModSource.ImportProxy(found, dialog.FileName);
+        _log.Details(result.Lines);
+        _log.Result(result.Ok, result.Message);
+
+        if (!result.Ok) return;
+
+        RefreshModSource();
+        BuildProxyCombo();
+        UpdateStatusCard();
     }
 
     /// <summary>
@@ -389,6 +485,7 @@ public partial class MainWindow : Window
 
     private void ProxyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_suppressProxyChange) return;
         if (Selected is null) return;
         if (ProxyCombo.SelectedValue is string value) Selected.PreferredProxy = value;
     }

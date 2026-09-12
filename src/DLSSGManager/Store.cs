@@ -129,7 +129,11 @@ public static class LibraryStore
         g.Profile.KernelImage = NormalizeKernel(g.Profile.KernelImage);
         g.Profile.MaxGeneratedFrames = Math.Clamp(g.Profile.MaxGeneratedFrames, 1, 3);
         g.Profile.LogLevel = Math.Clamp(g.Profile.LogLevel, 0, 3);
-        if (g.Deployment is not null) g.Deployment.Backups ??= new List<BackupItem>();
+        if (g.Deployment is not null)
+        {
+            g.Deployment.Backups ??= new List<BackupItem>();
+            g.Deployment.Files ??= new List<DeployedFile>();
+        }
     }
 
     public static string NormalizeRouter(string? value) =>

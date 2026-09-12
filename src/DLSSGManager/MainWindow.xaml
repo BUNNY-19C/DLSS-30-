@@ -265,6 +265,8 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Content="{loc:Tr Toolbar.ScanSteam}" Style="{StaticResource ToolButton}" Click="ScanSteam_Click" />
                     <Button Content="{loc:Tr Toolbar.ScanFolder}" Style="{StaticResource ToolButton}" Click="ScanFolder_Click" />
+                    <Button Content="{loc:Tr Toolbar.AddProxy}" Style="{StaticResource ToolButton}"
+                            Click="AddProxy_Click" ToolTip="{loc:Tr Toolbar.AddProxyTip}" />
                     <Button Content="{loc:Tr Toolbar.UpdateMod}" Style="{StaticResource ToolButton}"
                             Click="UpdateMod_Click" Margin="0"
                             ToolTip="{loc:Tr Toolbar.UpdateModTip}" />
@@ -426,18 +428,13 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="{loc:Tr Detail.ProxyEntry}" Style="{StaticResource FieldLabel}" />
-                                <!-- Tag carries the stable value the code compares against; Content is
-                                     the localised label. Binding SelectedValue to Content would break
-                                     as soon as the UI language changed. -->
+                                <!-- Items are built in code: the list is the source's available entry
+                                     names, which grows when the user adds a proxy DLL. Tag carries the
+                                     stable value the code compares against; Content is the localised
+                                     label. Binding SelectedValue to Content would break as soon as the
+                                     UI language changed. -->
                                 <ComboBox x:Name="ProxyCombo" Grid.Column="1" SelectedValuePath="Tag"
-                                          SelectionChanged="ProxyCombo_SelectionChanged">
-                                    <ComboBoxItem Content="{loc:Tr Common.Auto}" Tag="自动" />
-                                    <ComboBoxItem Content="version.dll" Tag="version.dll" />
-                                    <ComboBoxItem Content="winmm.dll" Tag="winmm.dll" />
-                                    <ComboBoxItem Content="dinput8.dll" Tag="dinput8.dll" />
-                                    <ComboBoxItem Content="winhttp.dll" Tag="winhttp.dll" />
-                                    <ComboBoxItem Content="dxgi.dll" Tag="dxgi.dll" />
-                                </ComboBox>
+                                          SelectionChanged="ProxyCombo_SelectionChanged" />
                             </Grid>
 
                             <TextBlock Text="{loc:Tr Detail.ProxyNote}"

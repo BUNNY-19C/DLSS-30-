@@ -68,6 +68,7 @@ public static class Program
             TestDeployRestore(modRoot, work);
             TestForeignFileProtection(modRoot, work);
             TestProxyOccupation(modRoot, work);
+            TestProxyImport(modRoot, work);
             TestSingleProxyInvariant(modRoot, work);
             TestAdopt(modRoot, work);
             TestDetection(modRoot, work);
@@ -726,6 +727,115 @@ public static class Program
         Check("给出了解决提示", result.Message.Contains("占用"), result.Message);
         Check("所有占用文件保持原样",
             ModSource.ProxyCandidates.All(n => Sha(Path.Combine(dir, n)) == hashes[n]));
+
+        // The community entry name must not be used as a fallback. Deploying version.dll under the name
+        // d3d12.dll would leave the game's D3D12 imports pointing at a DLL that does not export them, and
+        // the game would not start — so an entry is only deployable when a DLL for that name exists.
+        Check("不会退而求其次占用 d3d12.dll 这个名字", !File.Exists(Path.Combine(dir, "d3d12.dll")));
+    }
+
+    /// <summary>
+    /// Adding a proxy DLL the user supplies: the entry name is the file name, so the file is copied into
+    /// the mod folder under that name and deployed like the bundled entries. No mod download is needed —
+    /// the mechanics are the point, not the bytes.
+    /// </summary>
+    private static void TestProxyImport(string modRoot, string work)
+    {
+        Section("添加代理 DLL（本地入口）");
+
+        Check("d3d12.dll 属于已知入口名", ModSource.IsKnownProxyName("d3d12.dll"));
+        Check("入口名匹配不区分大小写", ModSource.IsKnownProxyName("D3D12.DLL"));
+        Check("自带入口不在导入集合里", !ModSource.ProxyCandidates.Contains("d3d12.dll"));
+
+        var source = MakeSyntheticModSource(work);
+        var before = new ModSource(source);
+        Check("初始没有本地入口", before.ImportedProxies.Count == 0, string.Join("、", before.ImportedProxies));
+        Check("可用入口初始为自带五个", before.AvailableProxies.Count == ModSource.ProxyCandidates.Length,
+            string.Join("、", before.AvailableProxies));
+
+        // A community build: a plausible entry name, and no signature this project can vouch for. The
+        // file name *is* the entry name, so the fixture has to carry the real one.
+        var communityDir = Path.Combine(work, "CommunityBuild");
+        Directory.CreateDirectory(communityDir);
+        var community = Path.Combine(communityDir, "d3d12.dll");
+        File.WriteAllBytes(community, RandomNumberGenerator.GetBytes(4096));
+
+        var add = ModSource.ImportProxy(source, community);
+        Check("导入成功", add.Ok, add.Message);
+        Check("以原文件名落在 altnative 下", File.Exists(Path.Combine(source, "altnative", "d3d12.dll")));
+        Check("内容与所选文件一致", Sha(Path.Combine(source, "altnative", "d3d12.dll")) == Sha(community));
+
+        var after = new ModSource(source);
+        Check("本地入口被识别", after.ImportedProxies.Count == 1 && after.ImportedProxies[0] == "d3d12.dll",
+            string.Join("、", after.ImportedProxies));
+        Check("可用入口变为六个", after.AvailableProxies.Count == ModSource.ProxyCandidates.Length + 1,
+            string.Join("、", after.AvailableProxies));
+        Check("自带入口仍是五个", after.Proxies.Count == ModSource.ProxyCandidates.Length,
+            string.Join("、", after.Proxies));
+        Check("本地入口排在自己五个之后",
+            after.AvailableProxies.Take(ModSource.ProxyCandidates.Length).SequenceEqual(ModSource.ProxyCandidates));
+
+        // The project's own builds must never be replaced by an import: their signature is what every
+        // ownership check rests on.
+        var clash = Path.Combine(work, "winmm.dll");
+        File.WriteAllBytes(clash, RandomNumberGenerator.GetBytes(512));
+        var reserved = ModSource.ImportProxy(source, clash);
+        Check("拒绝覆盖自带入口名", !reserved.Ok, reserved.Message);
+        Check("自带入口内容未变", Sha(Path.Combine(source, "altnative", "winmm.dll")) != Sha(clash));
+
+        var text = Path.Combine(work, "notes.txt");
+        File.WriteAllText(text, "not a proxy");
+        Check("拒绝非 DLL 文件", !ModSource.ImportProxy(source, text).Ok);
+        Check("拒绝不存在的文件", !ModSource.ImportProxy(source, Path.Combine(work, "nope.dll")).Ok);
+
+        // Deploy the imported entry, then remove it again with the normal restore path.
+        var dir = MakeGameDir(work, "GameImportedProxy");
+        var game = new GameEntry { Name = "GameImportedProxy", RenderDir = dir, PreferredProxy = "d3d12.dll" };
+
+        var deploy = DeploymentService.Deploy(game, new ModSource(source));
+        Check("部署本地入口成功", deploy.Ok, deploy.Message);
+        Check("入口名记录为 d3d12.dll", game.Deployment?.ProxyName == "d3d12.dll", game.Deployment?.ProxyName);
+        Check("游戏目录里出现 d3d12.dll", File.Exists(Path.Combine(dir, "d3d12.dll")));
+        Check("部署内容与本地代理一致", Sha(Path.Combine(dir, "d3d12.dll")) == Sha(community));
+        Check("代理与 INI 都记了指纹", game.Deployment!.Files.Count == 2, "实际: " + game.Deployment.Files.Count);
+
+        DeploymentService.Check(game);
+        Check("状态为已部署", game.Status == GameStatus.Deployed, game.StatusText + " / " + game.StatusDetail);
+
+        var restore = DeploymentService.Restore(game, removeLogs: false);
+        Check("一键恢复成功", restore.Ok, restore.Message);
+        Check("一键恢复删除了 d3d12.dll", !File.Exists(Path.Combine(dir, "d3d12.dll")));
+        Check("INI 也已删除", !File.Exists(Path.Combine(dir, ModSource.IniName)));
+
+        DeploymentService.Check(game);
+        Check("恢复后状态为未部署", game.Status == GameStatus.NotDeployed, game.StatusText);
+
+        // An imported proxy next to a project-signed one is still two proxies live at once — the crash
+        // the single-proxy invariant exists for. Needs the real signed payload.
+        if (!_hasModFiles)
+        {
+            _skipped++;
+            Console.WriteLine("  [跳过] 本地入口与自带入口冲突（需要 Mod 文件）");
+            return;
+        }
+
+        var conflictDir = MakeGameDir(work, "GameImportConflict");
+        var conflict = new GameEntry { Name = "GameImportConflict", RenderDir = conflictDir, PreferredProxy = "d3d12.dll" };
+        var conflictDeploy = DeploymentService.Deploy(conflict, new ModSource(source));
+        Check("冲突场景：先部署本地入口", conflictDeploy.Ok, conflictDeploy.Message);
+
+        File.Copy(Path.Combine(modRoot, "version.dll"), Path.Combine(conflictDir, "version.dll"), overwrite: true);
+
+        DeploymentService.Check(conflict);
+        Check("两种代理同时存在时被判定为异常",
+            conflict.Status == GameStatus.Modified && conflict.StatusDetail.Contains("代理"),
+            conflict.StatusText + " / " + conflict.StatusDetail);
+
+        var conflictRestore = DeploymentService.Restore(conflict, removeLogs: false);
+        Check("恢复后两个代理都已清除", conflictRestore.Ok &&
+            !File.Exists(Path.Combine(conflictDir, "d3d12.dll")) &&
+            !File.Exists(Path.Combine(conflictDir, "version.dll")),
+            conflictRestore.Message);
     }
 
     /// <summary>

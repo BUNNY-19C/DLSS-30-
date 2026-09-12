@@ -95,6 +95,14 @@ public sealed class BackupItem
     public long Size { get; set; }
 }
 
+/// <summary>A file a deployment wrote, with the hash recorded at write time.</summary>
+public sealed class DeployedFile
+{
+    public string FileName { get; set; } = "";
+    public string Sha256 { get; set; } = "";
+    public long Size { get; set; }
+}
+
 /// <summary>Record of what we put into a game directory, so restore can prove it is removing our own files.</summary>
 public sealed class DeploymentInfo
 {
@@ -106,6 +114,16 @@ public sealed class DeploymentInfo
     /// <summary>Folder under the restore root holding displaced originals, empty when nothing was displaced.</summary>
     public string RestoreFolder { get; set; } = "";
     public List<BackupItem> Backups { get; set; } = new();
+
+    /// <summary>
+    /// Every file this deployment wrote, with its hash.
+    ///
+    /// The signature check covers the entries this project builds, but a proxy the user added themselves
+    /// — a community d3d12.dll, say — has no signature to lean on, so these hashes are what let the
+    /// entry-name scan recognise it on later checks. Empty on records written before this field existed;
+    /// those deployments used the published entries, which the signature check still covers.
+    /// </summary>
+    public List<DeployedFile> Files { get; set; } = new();
 
     [JsonIgnore] public string DeployedAtDisplay => DeployedAt;
 }

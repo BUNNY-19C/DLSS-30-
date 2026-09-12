@@ -29,6 +29,8 @@ public static partial class Strings
         ["Toolbar.ScanFolder"] = "扫描文件夹…",
         ["Toolbar.UpdateMod"] = "下载 / 更新 Mod 文件",
         ["Toolbar.UpdateModTip"] = "从多个下载源获取 dlssg_for_sm86，下载后校验签名",
+        ["Toolbar.AddProxy"] = "添加代理 DLL…",
+        ["Toolbar.AddProxyTip"] = "把社区构建的代理（例如 d3d12.dll）加入入口名列表，之后可像自带入口一样部署到游戏",
         ["Toolbar.RestartAdmin"] = "以管理员身份重启",
         ["Toolbar.AlreadyAdmin"] = "已是管理员",
         ["Toolbar.OpenDataDir"] = "打开数据目录",
@@ -89,7 +91,7 @@ public static partial class Strings
         ["Detail.DetectSearching"] = "— 在 {0} 中查找渲染目录",
         ["Detail.SettingSummary"] = "  路由 {0} / {1} / 最大 {2}X / 近似采样 {3} / 日志 {4}",
         ["Detail.BackupCount"] = "已备份 {0} 个原文件",
-        ["Detail.EntriesTaken"] = "五个代理入口名（version/winmm/dinput8/winhttp/dxgi）在游戏目录里都已被占用。请在该游戏的设置里手动指定一个入口名，或先移除占用它的 Mod。",
+        ["Detail.EntriesTaken"] = "可用入口名在游戏目录里都已被占用（version / winmm / dinput8 / winhttp / dxgi，以及你添加的本地入口）。请在该游戏的设置里手动指定一个入口名，或先移除占用它的 Mod。",
 
         // ── 操作按钮 ─────────────────────────────────────────────────
         ["Action.Deploy"] = "部署到该游戏",
@@ -121,10 +123,10 @@ public static partial class Strings
         ["Deploy.GameRunning"] = "游戏正在运行，请完全退出后再部署：{0}",
         ["Deploy.SourceUnavailable"] = "Mod 文件源不可用：{0}{1}",
         ["Deploy.SourceMissingHint"] = "（目录不存在）。请点工具条上的「下载 / 更新 Mod 文件」获取。",
-        ["Deploy.AllProxiesTaken"] = "五个代理入口名（version/winmm/dinput8/winhttp/dxgi）在游戏目录里都已被占用。请在该游戏的设置里手动指定一个入口名，或先移除占用它的 Mod。",
+        ["Deploy.AllProxiesTaken"] = "可用入口名在游戏目录里都已被占用（version / winmm / dinput8 / winhttp / dxgi，以及你添加的本地入口）。请在该游戏的设置里手动指定一个入口名，或先移除占用它的 Mod。",
         ["Deploy.InvalidProxyName"] = "代理名 \"{0}\" 不是有效的入口名。请从下拉列表中选择。",
         ["Deploy.NoPermission"] = "没有写入权限。请用管理员身份重新启动本管理器。",
-        ["Deploy.ProxyTaken"] = "五个入口名都被占用（{0} 已被其他 Mod 使用）。请在该游戏的设置里手动指定一个入口名，或先移除占用它的 Mod。",
+        ["Deploy.ProxyTaken"] = "入口名 {0} 已被其他 Mod 使用。请在该游戏的设置里手动指定一个入口名，或先移除占用它的 Mod。",
         ["Deploy.BlockedKernel"] = "已阻止部署：{0}（{1}）。\n     内核级反作弊会在游戏启动前就拦截并隔离代理 DLL，因此本 Mod 在这款游戏上无法生效，而且检测记录可能危及账号。请改用游戏自带的帧生成选项。\n     如果你确认理解风险，可在确认对话框中选择仍然部署。",
         ["Deploy.ConfirmTitle"] = "确认部署",
         ["Deploy.BlockedTooltip"] = "该游戏带有内核级反作弊，本 Mod 无法在其上生效",
@@ -322,6 +324,22 @@ public static partial class Strings
         ["Fetch.SkipLog"] = "已跳过自动下载。需要时点「下载 / 更新 Mod 文件」获取。",
         ["Fetch.NotReadyLog"] = "Mod 文件源未就绪：尚未获取 mod 文件。点「下载 / 更新 Mod 文件」自动下载。",
         ["Fetch.IncompleteLog"] = "Mod 文件源不完整：{0}",
+
+        // ── 添加代理 DLL（用户自备入口）──────────────────────────────
+        ["Proxy.AddTitle"] = "添加代理 DLL",
+        ["Proxy.AddFilter"] = "DLL 文件 (*.dll)|*.dll",
+        ["Proxy.AddNeedSource"] = "请先获取 Mod 文件（工具条上的「下载 / 更新 Mod 文件」），代理 DLL 与它们存放在一起。",
+        ["Proxy.AddNeedDll"] = "请选择一个 .dll 文件。",
+        ["Proxy.AddFileMissing"] = "文件不存在：{0}",
+        ["Proxy.AddReserved"] = "「{0}」是本项目自带的入口名，不能覆盖。",
+        ["Proxy.AddUnknownName"] = "「{0}」不在已知入口名列表里（version / winmm / dinput8 / winhttp / dxgi / d3d12）。游戏通常不会加载别的名字，部署后很可能没有任何效果。\n\n仍要添加吗？",
+        ["Proxy.Added"] = "已添加代理入口 {0} → {1}",
+        ["Proxy.AddedFile"] = "  已写入 {0}（{1} KB）",
+        ["Proxy.AddedSigner"] = "  签名者：{0}",
+        ["Proxy.AddedUnsigned"] = "  未签名或签名无效（本地文件的来源由你自己确认）",
+        ["Proxy.AddReplaced"] = "  已替换同名的本地代理 {0}",
+        ["Proxy.AddFailed"] = "添加失败：{0}",
+        ["Proxy.ImportedSuffix"] = "（本地导入）",
 
         // ── Mod 文件源 ───────────────────────────────────────────────
         ["ModSource.DirMissing"] = "目录不存在",

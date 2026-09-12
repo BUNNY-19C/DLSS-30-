@@ -37,6 +37,7 @@ The mod is a DLL proxy: placing `version.dll` (or one of the alternative entry n
 - [Anti-cheat: games that cannot use this mod](#anti-cheat-games-that-cannot-use-this-mod)
 - [About GPUs](#about-gpus)
 - [Updating the mod files](#updating-the-mod-files)
+- [Adding a proxy DLL (a community entry name)](#adding-a-proxy-dll-a-community-entry-name)
 - [Repository layout](#repository-layout)
 - [Theme and localisation](#theme-and-localisation)
 - [Building from source](#building-from-source)
@@ -100,7 +101,7 @@ You need the .NET 8 SDK; see [Building from source](#building-from-source). The 
 
 ## Interface
 
-The toolbar shows the current mod file source and your GPU. Top right has four controls:
+The toolbar shows the current mod file source and your GPU; its right-hand side holds the scan, download and “Add proxy DLL…” buttons (the last of these is covered under [adding a proxy DLL](#adding-a-proxy-dll-a-community-entry-name)). Top right has four controls:
 
 - **Restart as administrator** — needed when the game lives under `C:\Program Files`, where writing requires elevation. Restarts through a UAC prompt.
 - **Open data folder** — opens `%APPDATA%\DLSSGManager`, which holds the configuration and backups.
@@ -133,7 +134,7 @@ Game folders often already contain other mods (ReShade's `dxgi.dll`, for instanc
 What that means in practice:
 
 - **Anti-cheat games are blocked outright** — see the next section. Kernel-level anti-cheat makes the mod ineffective and carries account risk, so deployment is refused by default.
-- **An occupied entry name is never overwritten**: the manager picks a free name from `version.dll` → `winmm.dll` → `dinput8.dll` → `winhttp.dll` → `dxgi.dll`. If all five are taken it reports the conflict and leaves everything untouched.
+- **An occupied entry name is never overwritten**: the manager picks a free name from the available entries — the five bundled ones first (`version.dll` → `winmm.dll` → `dinput8.dll` → `winhttp.dll` → `dxgi.dll`), then any local entry you added. If all of them are taken it reports the conflict and leaves everything untouched.
 - **Restore only deletes its own files**: a hash mismatch means the file is kept and reported, never deleted blindly.
 - **A running game blocks the operation**: both deploy and restore check for processes inside the render directory first.
 - **Existing manual installs can be adopted**, bringing them under management so restore works later.
@@ -264,6 +265,20 @@ That last point matters for the mirror: a mirror is not the authority for the co
 
 You can also place the files yourself: put `version.dll`, `dlssg_sm86.ini` and `altnative\` into `mod\`; the manager recognises them by the folder structure. See [docs/mod-files.md](docs/mod-files.md).
 
+## Adding a proxy DLL (a community entry name)
+
+This project ships five entry names. On some games a protection module claims those names first — **Zenless Zone Zero** is one — so the community builds other entries, most commonly `d3d12.dll`: the game loads it dynamically when it initialises its DX12 backend, by which point the proxy gets a chance to load.
+
+Click “**Add proxy DLL…**” in the toolbar and pick the file. The manager then:
+
+- copies it into `mod\altnative\` **under its own file name** — the name *is* the entry name, the DLL name the game resolves, so it cannot be changed;
+- reads the **signer** and writes it to the log (the certificate subject when the signature is intact, an explicit “unsigned” note otherwise). It does not vouch for the origin: the file is yours, so the origin is yours to confirm;
+- lists it from then on in every game's “Proxy entry” picker, marked *(imported)*, deployable and removable with the normal buttons. Restore removes it by the SHA256 recorded at deploy time and touches nothing else.
+
+Two limits: the five bundled names cannot be replaced (that would displace the official builds every signature check depends on), and a name outside the known set (`version` / `winmm` / `dinput8` / `winhttp` / `dxgi` / `d3d12`) triggers a warning that the game will most likely never load it — continuing is your call.
+
+> **Why the name cannot be arbitrary**: an entry name is “a DLL name the game will load”. Get it right and the proxy enters the game process; get it wrong and deploying does nothing at all. It is also why the manager will **not** simply rename `version.dll` to `d3d12.dll`: each build exports only the system API surface of the name it stands in for, so the game's D3D12 imports would find no implementation and the game would not start.
+
 ---
 
 ## Repository layout
@@ -338,7 +353,7 @@ The result is `dist/DLSSGManager-<version>-setup.exe`. The design decisions in t
 
 Releases are built automatically by GitHub Actions: pushing a `v*` tag (for example `git tag v1.4.0 && git push origin v1.4.0`) builds, tests, compiles the installer and creates a Release with both executables and `SHA256SUMS.txt`. The workflow can also be triggered manually from the Actions tab.
 
-Testing (328 cases covering deployment and restore, backup protection, anti-cheat detection and blocking, path validation, INI rendering, persistence, download URL policy, signature verification, source selection, theming and localisation):
+Testing (358 cases covering deployment and restore, backup protection, anti-cheat detection and blocking, entry-name management, local proxy import, path validation, INI rendering, persistence, download URL policy, signature verification, source selection, theming and localisation):
 
 ```bash
 cd test/Harness

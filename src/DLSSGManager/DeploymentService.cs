@@ -277,67 +277,58 @@ public static class DeploymentService
         return false;
     }
 
-    /// <summary>First candidate name in the game directory that already holds a project-signed DLL.</summary>
-    public static string? FindInstalledProxy(string renderDir)
+    /// <summary>
+    /// First entry name in the game directory that already holds something of ours: a DLL carrying this
+    /// project's signature, or a file the given record claims whose bytes still match.
+    ///
+    /// Scanning covers <see cref="ModSource.KnownProxyNames"/> rather than only the published five, so an
+    /// entry the user added is recognised on the next deploy instead of a second name being picked
+    /// alongside it — two live proxies is the crash this invariant exists to prevent.
+    /// </summary>
+    public static string? FindInstalledProxy(string renderDir, DeploymentInfo? prev = null)
     {
-        foreach (var name in ModSource.ProxyCandidates)
+        foreach (var name in ModSource.KnownProxyNames)
         {
             var path = Path.Combine(renderDir, name);
-            if (File.Exists(path) && IsProjectSigned(path)) return name;
+            if (File.Exists(path) && IsOurProxyAt(renderDir, name, prev)) return name;
         }
 
         return null;
     }
 
-    private static string PickProxy(GameEntry game)
-    {
-        var wanted = game.PreferredProxy;
-        if (!string.Equals(wanted, AutoProxy, StringComparison.OrdinalIgnoreCase) &&
-            ModSource.ProxyCandidates.Contains(wanted, StringComparer.OrdinalIgnoreCase))
-        {
-            return ModSource.ProxyCandidates.First(n => string.Equals(n, wanted, StringComparison.OrdinalIgnoreCase));
-        }
-
-        foreach (var name in ModSource.ProxyCandidates)
-        {
-            var path = Path.Combine(game.RenderDir, name);
-            if (!File.Exists(path)) return name;
-            if (IsProjectSigned(path)) return name;
-        }
-
-        return ModSource.ProxyCandidates[0];
-    }
-
-    /// <summary>Auto-pick a name that is free, so an occupied entry is reported rather than silently overwritten.</summary>
     /// <summary>
-    /// Chooses which proxy entry name to use.
+    /// Chooses which proxy entry name to use, from the names this source can actually provide.
     ///
-    /// An existing proxy of this project is reused in preference to a free name, because the game
-    /// loads every entry name it recognises: installing under a second name would leave two proxies
-    /// live at once, and the mod requires exactly one. Switching names is only for the case where
-    /// another product already occupies the current one.
+    /// An existing proxy of ours is reused in preference to a free name, because the game loads every
+    /// entry name it recognises: installing under a second name would leave two proxies live at once.
+    /// Switching names is only for the case where another product already occupies the current one.
+    ///
+    /// An explicit choice is honoured only when the source has a DLL for it; otherwise the caller is
+    /// told, rather than a different entry being installed behind the user's back.
     /// </summary>
-    private static string? PickFreeProxy(GameEntry game)
+    private static string? PickFreeProxy(GameEntry game, ModSource source)
     {
+        var available = source.AvailableProxies;
+
         var wanted = game.PreferredProxy;
         if (!string.Equals(wanted, AutoProxy, StringComparison.OrdinalIgnoreCase))
         {
-            return ModSource.ProxyCandidates.Contains(wanted, StringComparer.OrdinalIgnoreCase)
-                ? ModSource.ProxyCandidates.First(n => string.Equals(n, wanted, StringComparison.OrdinalIgnoreCase))
+            return available.Contains(wanted, StringComparer.OrdinalIgnoreCase)
+                ? available.First(n => string.Equals(n, wanted, StringComparison.OrdinalIgnoreCase))
                 : null;
         }
 
         // Reuse our own installation rather than picking a second, unoccupied name.
-        var installed = FindInstalledProxy(game.RenderDir);
+        var installed = FindInstalledProxy(game.RenderDir, game.Deployment);
         if (installed is not null) return installed;
 
-        foreach (var name in ModSource.ProxyCandidates)
+        foreach (var name in available)
         {
             var path = Path.Combine(game.RenderDir, name);
             if (!File.Exists(path)) return name;
         }
 
-        return ModSource.ProxyCandidates[0];
+        return available.FirstOrDefault();
     }
 
     /// <summary>
@@ -391,7 +382,7 @@ public static class DeploymentService
             return r;
         }
 
-        var proxy = PickFreeProxy(game);
+        var proxy = PickFreeProxy(game, source);
         if (proxy is null)
         {
             r.Fail(string.Equals(game.PreferredProxy, AutoProxy, StringComparison.OrdinalIgnoreCase)
@@ -418,11 +409,14 @@ public static class DeploymentService
         // The mod requires exactly one proxy in the game folder: the game loads every entry name it
         // recognises, so two would run two inference pipelines at once. Rather than trusting the
         // deployment record (which can be absent, e.g. after the library is reset), scan the entry
-        // names for anything signed by this project and remove all but the one being installed.
-        var redundantProxies = ModSource.ProxyCandidates
+        // names for anything of ours and remove all but the one being installed.
+        //
+        // "Ours" includes a file the record claims by hash: an entry the user added themselves carries
+        // no signature this project can vouch for, so the record is the only way to recognise it.
+        var redundantProxies = ModSource.KnownProxyNames
             .Where(n => !string.Equals(n, proxy, StringComparison.OrdinalIgnoreCase))
             .Select(n => (Name: n, Path: Path.Combine(game.RenderDir, n)))
-            .Where(x => File.Exists(x.Path) && IsOurs(x.Path, null))
+            .Where(x => File.Exists(x.Path) && IsOurProxyAt(game.RenderDir, x.Name, prev))
             .ToList();
 
         try
@@ -455,15 +449,25 @@ public static class DeploymentService
             Unblock(proxyDest);
             Unblock(iniDest);
 
+            var proxyHash = Sha256(proxyDest);
+            var iniHash = Sha256(iniDest);
+
             game.Deployment = new DeploymentInfo
             {
                 ProxyName = proxy,
                 ModVersion = source.Version,
                 DeployedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                ProxySha256 = Sha256(proxyDest),
-                IniSha256 = Sha256(iniDest),
+                ProxySha256 = proxyHash,
+                IniSha256 = iniHash,
                 RestoreFolder = backups.Count > 0 ? restoreFolder : "",
                 Backups = backups,
+                // Both files this deployment wrote. Kept so the entry-name scan can recognise a proxy the
+                // user supplied themselves, which no signature vouches for.
+                Files = new List<DeployedFile>
+                {
+                    new() { FileName = proxy, Sha256 = proxyHash, Size = new FileInfo(proxyDest).Length },
+                    new() { FileName = ModSource.IniName, Sha256 = iniHash, Size = new FileInfo(iniDest).Length },
+                },
             };
 
             r.Note(Loc.T("Deploy.Done", proxy, ModSource.IniName, game.RenderDir));
@@ -533,11 +537,11 @@ public static class DeploymentService
         try
         {
             // 1) The proxy we recorded; if there is no record, any project-signed DLL in a known entry name.
-            // Scan every candidate entry name rather than only the recorded one: a stray proxy can be
+            // Scan every known entry name rather than only the recorded one: a stray proxy can be
             // present (a name switch that predates the single-proxy rule, a restored backup, an
             // earlier record lost from the library), and leaving it behind would keep a proxy live in
             // a folder the user expects to be clean.
-            foreach (var name in ModSource.ProxyCandidates)
+            foreach (var name in ModSource.KnownProxyNames)
             {
                 var path = Path.Combine(game.RenderDir, name);
                 if (!File.Exists(path)) continue;
@@ -585,7 +589,7 @@ public static class DeploymentService
 
             // 3) Copies an anti-cheat quarantined by renaming (e.g. version.dll.3787982156). Only
             //    files that are provably ours are removed, so another tool's ".bak" survives.
-            foreach (var name in ModSource.ProxyCandidates)
+            foreach (var name in ModSource.KnownProxyNames)
             {
                 foreach (var copy in AntiCheat.FindQuarantinedCopies(game.RenderDir, name, prev?.ProxySha256))
                 {
@@ -726,12 +730,14 @@ public static class DeploymentService
         // Drives the warning banner, so it is refreshed on every check.
         var protection = AntiCheat.Scan(game.RenderDir);
 
+        var root = game.RenderDir;
+        var prev = game.Deployment;
+
         // More than one proxy of ours is a hard fault: the game loads every entry name it recognises,
         // so two would run two inference pipelines and crash. This is reported ahead of the normal
         // status because it needs fixing before the game is launched, not merely noted.
-        var root = game.RenderDir;
-        var liveProxies = ModSource.ProxyCandidates
-            .Where(n => File.Exists(Path.Combine(root, n)) && IsProjectSigned(Path.Combine(root, n)))
+        var liveProxies = ModSource.KnownProxyNames
+            .Where(n => File.Exists(Path.Combine(root, n)) && IsOurProxyAt(root, n, prev))
             .ToList();
 
         if (liveProxies.Count > 1)
@@ -741,7 +747,6 @@ public static class DeploymentService
                 protection);
         }
 
-        var prev = game.Deployment;
         if (prev is null)
         {
             var found = FindInstalledProxy(root);
@@ -792,6 +797,37 @@ public static class DeploymentService
         if (check.Protection is not null) game.Protection = check.Protection;
         game.Status = check.Status;
         game.StatusDetail = check.Detail;
+    }
+
+    /// <summary>
+    /// True when an entry-name slot holds something this project put there: a DLL carrying our signature,
+    /// or a file a deployment record claims whose bytes still match.
+    ///
+    /// The record half exists for entries the user added themselves. A community build such as d3d12.dll
+    /// has no signature this project can vouch for, so the hash recorded at deploy time is the only proof
+    /// that the file is ours to reuse, report or delete. The signature check is still tried as a fallback,
+    /// so a deployment made before records carried hashes is recognised exactly as it was before.
+    /// </summary>
+    private static bool IsOurProxyAt(string root, string name, DeploymentInfo? prev)
+    {
+        var recorded = prev?.Files.FirstOrDefault(f =>
+            string.Equals(f.FileName, name, StringComparison.OrdinalIgnoreCase));
+
+        var path = Path.Combine(root, name);
+
+        if (recorded is not null)
+        {
+            try
+            {
+                if (string.Equals(Sha256(path), recorded.Sha256, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            catch
+            {
+                // An unreadable file falls through to the signature check, which will also fail.
+            }
+        }
+
+        return IsProjectSigned(path);
     }
 
     /// <summary>Evaluates and applies in one call, for callers already off the UI thread.</summary>
