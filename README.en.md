@@ -182,19 +182,15 @@ When a kernel-level anti-cheat is found, the manager **warns rather than forbids
 | War Thunder | BattlEye | untested |
 | Arknights: Endfield | Tencent ACE | untested |
 | Overwatch | NetEase NEAC | untested |
-| Monster Hunter Wilds | none | ⚠ crashed here — see below |
+| Monster Hunter Wilds | none | ⚠ crashes without the REFramework prerequisite — see below |
 
 For the four with anti-cheat the manager warns before deploying, and whether to deploy is your decision.
 
-**Monster Hunter Wilds is a different case**: it has no anti-cheat, and the mod loads successfully (its log shows four DLSSG requests taken over), but the game then crashes. Measured on one machine:
+**Monster Hunter Wilds is a different case**: it has no anti-cheat and the mod loads successfully (its log shows four DLSSG requests taken over), but the game then crashed (`MonsterHunterWilds.exe + 0xa4d69d0`; switching mod versions, updating the DLSS runtime and turning off the in-game FG toggle all made no difference).
 
-- Without the mod (after a Steam integrity check) → the game runs normally
-- With the mod → crash at a fixed location (`MonsterHunterWilds.exe + 0xa4d69d0`)
-- Two structurally different mod versions (0.1.0 and 0.2.4) → both crash at the same location
-- Updating the NVIDIA DLSS runtime to the latest → no change
-- Turning off the in-game DLSS frame generation toggle → no change
+**The cause has been identified: the [REFramework](https://github.com/praydog/REFramework) prerequisite was missing** — the mod framework RE Engine games rely on; Wilds uses its `MHWILDS` package. So that crash was not a machine-specific incompatibility but a prerequisite that was never installed. Installing it is **manual**, because it is a separate project and the manager does not install it for you: download `MHWILDS.zip` from REFramework's releases and extract `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework\` next to `MonsterHunterWilds.exe`. The manager sees `dinput8.dll` is taken and falls back to `version.dll` for its own proxy entry, so the two coexist.
 
-This does **not** mean the mod is universally incompatible with the game — an upstream user reported success on an RTX 3090. So the entry above reflects one machine only; **test it yourself**: restore first, confirm the game starts, then try deploying.
+Re-testing with the prerequisite installed is in progress; this section will be updated once the result is confirmed.
 
 **If you already deployed**: click “Restore”. The manager recognises and removes the renamed copies anti-cheat leaves behind (only files confirmed by signature or hash to be ours), along with the INI. The status column reports this as “quarantined by anti-cheat” rather than a plain missing file.
 

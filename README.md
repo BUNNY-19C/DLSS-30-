@@ -180,19 +180,15 @@ Get-FileHash DLSSGManager.exe -Algorithm SHA256
 | 战争雷霆 | BattlEye | 未测试 |
 | 终末地 | 腾讯 ACE | 未测试 |
 | 守望先锋 | 网易 NEAC | 未测试 |
-| 怪物猎人荒野 | 无 | ⚠ 本机实测崩溃，见下 |
+| 怪物猎人荒野 | 无 | ⚠ 缺前置 REFramework 时崩溃，见下 |
 
 带反作弊的四款，程序都会在部署前提示风险，是否部署由你决定。
 
-**怪物猎人荒野的情况不同**：它没有反作弊，mod 也能成功加载（日志显示已接管 4 次 DLSSG 请求），但游戏随后崩溃。在同一台机器上做过对照：
+**怪物猎人荒野的情况不同**：它没有反作弊，mod 也能成功加载（日志显示已接管 4 次 DLSSG 请求），但游戏随后崩溃（`MonsterHunterWilds.exe + 0xa4d69d0`，换 mod 版本、更新 DLSS 运行库、关掉游戏内 FG 开关都无效）。
 
-- 不装 mod（完整性验证后）→ 游戏正常
-- 装 mod → 崩溃，报错位置固定（`MonsterHunterWilds.exe + 0xa4d69d0`）
-- 换用互不相同的两个 mod 版本（0.1.0 与 0.2.4）→ 崩在同一位置
-- 更新 NVIDIA DLSS 运行库到最新 → 无效
-- 关闭游戏内的 DLSS 帧生成开关 → 无效
+**原因已定位：缺少前置 [REFramework](https://github.com/praydog/REFramework)**——RE Engine 游戏的 mod 前置框架，怪猎荒野用它的 `MHWILDS` 包。也就是说那次崩溃不是"本机不兼容"，而是前置没装。前置**需要手动安装**（它属于另一个项目，管理器不代装）：从 REFramework 的 Releases 下载 `MHWILDS.zip`，把里面的 `dinput8.dll`、`openvr_api.dll`、`openxr_loader.dll`、`reframework\` 解压到 `MonsterHunterWilds.exe` 旁边。管理器会看到 `dinput8.dll` 已被占用，自动改用 `version.dll` 作为代理入口，两者可以共存。
 
-需要说明的是，这不代表怪猎普遍不兼容——上游有用户在 RTX 3090 上报过成功。所以上面这条记录只反映本机情况，**建议你自行测试**：先「一键恢复」，确认游戏能正常启动后再尝试部署。
+装上前置后的复测正在进行，结果确认后会更新本节。
 
 **已经装过了怎么办**：点「一键恢复」。程序能识别并清理反作弊留下的改名副本（只删哈希或签名确认属于本项目的文件），同时移除 INI。状态栏会把这种情况显示为"已被反作弊隔离"而不是普通缺失。
 
