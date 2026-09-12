@@ -1312,9 +1312,10 @@ public static class Program
         Check("提示包含游戏名", notice.Contains("终末地"), notice);
         Check("提示说明反作弊产品", notice.Contains("腾讯 ACE"), notice);
         Check("提示列出证据", notice.Contains("AntiCheatExpert"), notice);
-        Check("提示告知无法生效", notice.Contains("无法生效"), notice);
+        Check("提示说明自带入口会被隔离", notice.Contains("隔离"), notice);
         Check("提示警示账号风险", notice.Contains("账号"), notice);
         Check("提示引导用游戏自带功能", notice.Contains("nvngx_dlssg.dll"), notice);
+        Check("提示说明部署要逐个确认", notice.Contains("确认"), notice);
 
         var unnamed = AntiCheat.BuildUnsupportedNotice("", neacReport);
         Check("游戏名为空时提示仍完整", unnamed.Contains("该游戏") && unnamed.Contains("NEAC"), unnamed);

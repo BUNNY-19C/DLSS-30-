@@ -148,26 +148,24 @@ public partial class MainWindow
         if (targets.Count == 0) { _log.Write(Loc.T("Batch.NothingToDeploy")); return; }
 
         var protectedGames = targets.Where(g => g.HasKernelAntiCheat).ToList();
-        var eligible = targets.Count - protectedGames.Count;
 
-        var body = Loc.T("Batch.DeployConfirm", targets.Count,
-            string.Join("\n", targets.Select(t => "· " + t.Name)));
-
-        if (protectedGames.Count > 0)
-        {
-            body = Loc.T("Batch.DeployConfirmWithSkipped",
-                eligible,
-                string.Join("\n", targets.Where(t => !t.HasKernelAntiCheat).Select(t => "· " + t.Name)),
+        // Protected games stay in the list: the user asked for a batch, and the scan cannot know whether
+        // this game's protection lets the chosen entry name survive. They are flagged as a risk and
+        // deployed on the strength of this one confirmation.
+        var body = protectedGames.Count == 0
+            ? Loc.T("Batch.DeployConfirm", targets.Count,
+                string.Join("\n", targets.Select(t => "· " + t.Name)))
+            : Loc.T("Batch.DeployConfirmWithRisk",
+                targets.Count,
+                string.Join("\n", targets.Select(t => "· " + t.Name)),
                 protectedGames.Count,
                 string.Join("\n", protectedGames.Select(t => $"· {t.Name} — {t.Protection!.Products}")));
-        }
 
         if (MessageBox.Show(body, Loc.T("Batch.DeployTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
 
         _log.Write(Loc.T("Batch.DeployStart", targets.Count));
         var ok = 0;
-        var blocked = 0;
         var source = CurrentSource();
 
         _busy = true;
@@ -175,13 +173,13 @@ public partial class MainWindow
         {
             foreach (var game in targets)
             {
-                // Batch mode never overrides the anti-cheat gate; protected games are listed instead.
-                var result = DeploymentService.Deploy(game, source);
+                // The confirmation above covers the anti-cheat risk for every game in the list.
+                var result = DeploymentService.Deploy(game, source, allowProtected: game.HasKernelAntiCheat);
                 var mark = result.Ok ? "✓" : "✗";
-                _log.Write($"  {mark} {game.Name}：{result.Message}");
+                var risk = game.HasKernelAntiCheat ? Loc.T("Batch.RiskMark") : "";
+                _log.Write($"  {mark}{risk} {game.Name}：{result.Message}");
 
                 if (result.Ok) ok++;
-                else if (game.HasKernelAntiCheat) blocked++;
             }
         }
         finally
@@ -189,8 +187,7 @@ public partial class MainWindow
             _busy = false;
         }
 
-        _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Deploy"), ok, targets.Count) +
-                   (blocked > 0 ? Loc.T("Batch.ResultSkipped", blocked) : ""));
+        _log.Write(Loc.T("Batch.Result", Loc.T("Batch.Deploy"), ok, targets.Count));
         BatchStatusText.Text = Loc.T("Batch.LastDeploy", ok, targets.Count);
         LibraryStore.Save(_data);
         RefreshAllStatus();

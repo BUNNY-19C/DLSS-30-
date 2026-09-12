@@ -34,7 +34,7 @@ The mod is a DLL proxy: placing `version.dll` (or one of the alternative entry n
 - [Running from source](#running-from-source)
 - [Interface](#interface)
 - [How it protects your files](#how-it-protects-your-files)
-- [Anti-cheat: games that cannot use this mod](#anti-cheat-games-that-cannot-use-this-mod)
+- [Anti-cheat: risk assessment, your call](#anti-cheat-risk-assessment-your-call)
 - [About GPUs](#about-gpus)
 - [Updating the mod files](#updating-the-mod-files)
 - [Adding a proxy DLL (a community entry name)](#adding-a-proxy-dll-a-community-entry-name)
@@ -141,18 +141,13 @@ What that means in practice:
 
 ---
 
-## Anti-cheat: games that cannot use this mod
+## Anti-cheat: risk assessment, your call
 
-This is the most important limitation. **Games with kernel-level anti-cheat cannot use the mod**, and the manager blocks deployment to them.
+This mod is a DLL proxy, which is exactly the shape of thing kernel-level anti-cheat is built to catch, so such games are a **risk zone**: the anti-cheat may block and quarantine the proxy before the game even launches — leaving a renamed copy such as `version.dll.3787982156` behind — and may record a detection that puts your account at risk.
 
-The reason is direct: this mod is a DLL proxy, which is exactly the shape of thing kernel-level anti-cheat is built to catch. It **blocks and quarantines the proxy before the game even launches** — leaving a renamed copy such as `version.dll.3787982156` behind — with two consequences:
+Confirmed by testing: **Zenless Zone Zero** ships miHoYo's HoYoKProtect, which quarantined `version.dll` on sight, after which the game reported `The client component is running abnormally, please restart the client. Error Code:(0,11008,2195210578)`. On that same game, however, a community-built `d3d12.dll` entry works — see [adding a proxy DLL](#adding-a-proxy-dll-a-community-entry-name).
 
-1. The mod does not work; the game keeps using its own rendering path, and may report errors.
-2. **A detection may put your account at risk.**
-
-Confirmed by testing: **Zenless Zone Zero** ships miHoYo's HoYoKProtect, which quarantined `version.dll` on sight, after which the game reported `The client component is running abnormally, please restart the client. Error Code:(0,11008,2195210578)`.
-
-The scan covers the game folder **and three levels of parent directories**, and recognises:
+The scan covers the game folder **and three levels of parent directories**, and reports a risk before deploying when it recognises:
 
 | Anti-cheat | Indicators |
 |---|---|
@@ -169,26 +164,27 @@ Detection matches **both files and directories** (Tencent ACE typically ships as
 
 Before scanning, the folder you picked is **resolved to the actual render directory**. That step is not optional: Overwatch keeps its anti-cheat in `E:\Overwatch\_retail_\`, so pointing at the outer `E:\Overwatch` and scanning upwards would miss `NeacSafe64.sys` entirely — verified in practice.
 
-When a kernel-level anti-cheat is found:
+When a kernel-level anti-cheat is found, the manager **warns rather than forbids**:
 
 - **A prompt appears as soon as the game is added** (several at once are summarised in a single dialog rather than one popup each);
 - an orange warning bar appears at the top of the detail panel;
-- **the “Deploy to this game” button is disabled**, and “Deploy all” lists such games as skipped;
-- if you installed by hand earlier, “Restore” still works and can clean up the leftovers.
+- “Deploy to this game” asks for confirmation, **with “No” preselected**; the write happens only after you agree;
+- “Deploy all” lists such games separately in its confirmation and deploys them along with the rest once you agree;
+- “Restore” is always available and cleans up leftovers.
 
-So even if the prompt is missed when adding a game, there is no opportunity to write files into a protected folder.
+> **Why it is not disabled**: the scan can tell *whether* anti-cheat is present, not *whether it will block the entry name you chose*. On Zenless Zone Zero `version.dll` is quarantined while `d3d12.dll` works — a judgement only you can make, so the manager lays out the evidence and the consequences instead.
 
 **Measured results on the development machine**, for reference:
 
 | Game | Anti-cheat | Result |
 |---|---|---|
-| Zenless Zone Zero | miHoYo HoYoKProtect | ❌ blocked by anti-cheat |
-| War Thunder | BattlEye | ❌ blocked by anti-cheat |
-| Arknights: Endfield | Tencent ACE | ❌ blocked by anti-cheat |
-| Overwatch | NetEase NEAC | ❌ blocked by anti-cheat |
+| Zenless Zone Zero | miHoYo HoYoKProtect | ⚠ bundled `version.dll` quarantined; community `d3d12.dll` works |
+| War Thunder | BattlEye | untested |
+| Arknights: Endfield | Tencent ACE | untested |
+| Overwatch | NetEase NEAC | untested |
 | Monster Hunter Wilds | none | ⚠ crashed here — see below |
 
-The first four are blocked by anti-cheat, and the manager recognises them and refuses to deploy.
+For the four with anti-cheat the manager warns before deploying, and whether to deploy is your decision.
 
 **Monster Hunter Wilds is a different case**: it has no anti-cheat, and the mod loads successfully (its log shows four DLSSG requests taken over), but the game then crashes. Measured on one machine:
 
@@ -202,7 +198,7 @@ This does **not** mean the mod is universally incompatible with the game — an 
 
 **If you already deployed**: click “Restore”. The manager recognises and removes the renamed copies anti-cheat leaves behind (only files confirmed by signature or hash to be ours), along with the INI. The status column reports this as “quarantined by anti-cheat” rather than a plain missing file.
 
-**If you still want to deploy after accepting the risk**: the manager shows a second confirmation marked as not recommended. Note that on such games the mod will not work.
+**After deploying to a game with anti-cheat**: if the game errors out or frame generation does not appear, that entry name is being blocked — try another entry, or just click “Restore”. The account risk of a recorded detection is yours to carry.
 
 **Contributing results**: the [compatibility report](https://github.com/BUNNY-19C/DLSSG-30s-manager/issues/new?template=game_compatibility.yml) template is there for both working and failing cases — failures are just as useful to others.
 

@@ -505,12 +505,11 @@ public partial class MainWindow : Window
         OpenLogButton.IsEnabled = game.RenderDir is not null &&
                                   Directory.Exists(Path.Combine(game.RenderDir, ModSource.LogDirName));
 
-        // A kernel anti-cheat makes the mod impossible to use there, so the action is disabled rather
-        // than merely warned about. Restore stays available to clean up a deployment made earlier.
-        DeployButton.IsEnabled = !game.HasKernelAntiCheat;
-        DeployButton.ToolTip = game.HasKernelAntiCheat
-            ? Loc.T("Deploy.BlockedTooltip")
-            : null;
+        // Deployment stays available on games with a kernel anti-cheat; RunDeploy warns and asks for
+        // confirmation first. The scan cannot know whether this game's protection lets a given entry
+        // name survive — a community entry such as d3d12.dll exists precisely because some do — so the
+        // decision is the user's, not the scan's.
+        DeployButton.ToolTip = game.HasKernelAntiCheat ? Loc.T("Deploy.BlockedTooltip") : null;
     }
 
     private static string StatusDetailText(GameEntry game)
