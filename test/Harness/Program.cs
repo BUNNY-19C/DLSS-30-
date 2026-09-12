@@ -344,7 +344,13 @@ public static class Program
 
         var source = new ModSource(modRoot);
         Check("源目录有效", source.IsValid, source.ValidationMessage);
-        Check("版本号解析为 0.2.3", source.Version == "0.2.3", "实际: " + source.Version);
+
+        // Compared against the INI's own banner rather than a hard-coded version: the upstream payload
+        // is re-fetched from the network and moves on, and a stale expectation here would fail the
+        // suite for a reason that has nothing to do with the manager.
+        var bannerVersion = ModSource.ReadVersion(Path.Combine(modRoot, ModSource.IniName));
+        Check("版本号从 INI 横幅解析", bannerVersion is not null && source.Version == bannerVersion,
+            $"横幅 {bannerVersion ?? "(无)"} vs 解析 {source.Version}");
         Check("五个代理入口全部识别", source.Proxies.Count == 5,
             "实际: " + string.Join(",", source.Proxies));
         Check("version.dll 在根目录", File.Exists(Path.Combine(modRoot, "version.dll")));
@@ -646,7 +652,7 @@ public static class Program
         Check("写入 dlssg_sm86.ini", File.Exists(Path.Combine(dir, ModSource.IniName)));
         Check("记录已建立", game.Deployment is not null);
         Check("记录的入口名正确", game.Deployment?.ProxyName == "version.dll", game.Deployment?.ProxyName);
-        Check("记录版本号", game.Deployment?.ModVersion == "0.2.3", game.Deployment?.ModVersion);
+        Check("记录版本号", game.Deployment?.ModVersion == source.Version, game.Deployment?.ModVersion);
         Check("DLL 已带项目签名", DeploymentService.IsProjectSigned(Path.Combine(dir, "version.dll")));
         Check("部署的 DLL 与源文件一致",
             Sha(Path.Combine(dir, "version.dll")) == Sha(Path.Combine(modRoot, "version.dll")));
@@ -941,7 +947,10 @@ public static class Program
 
         var adopt = DeploymentService.Adopt(game);
         Check("接管成功", adopt.Ok, adopt.Message);
-        Check("接管后版本号从 INI 读出", game.Deployment?.ModVersion == "0.2.3", game.Deployment?.ModVersion);
+        var adoptedVersion = ModSource.ReadVersion(Path.Combine(dir, ModSource.IniName));
+        Check("接管后版本号从 INI 读出",
+            adoptedVersion is not null && game.Deployment?.ModVersion == adoptedVersion,
+            $"横幅 {adoptedVersion ?? "(无)"} vs 记录 {game.Deployment?.ModVersion}");
 
         DeploymentService.Check(game);
         Check("接管后状态为已部署", game.Status == GameStatus.Deployed, game.StatusText + " / " + game.StatusDetail);
