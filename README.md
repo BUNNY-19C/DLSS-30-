@@ -8,11 +8,20 @@
 [![GPU](https://img.shields.io/badge/GPU-RTX%2030%20%E7%B3%BB%20(SM86)-76B900?style=flat-square)](#)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?style=flat-square)](#)
 
+> [!NOTE]
+> **本项目由 AI 开发。** 代码、界面文案、文档、测试都由 AI 生成，维护者负责真机实测与发布。文中所有数字和结论都来自实际运行（本机日志、对照实验），但 AI 产出难免有错漏，发现问题请[开 issue](../../issues)。
+
 为 [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86) 做的图形化管理器。把 mod 按游戏分别部署、一键恢复，不用再手工往游戏目录里复制 DLL。
 
 这是一个 DLL 代理式 mod：把 `version.dll`（或其他入口名）和 `dlssg_sm86.ini` 放到**游戏渲染 EXE 旁边**，就能让 RTX 30 系（SM86）用上 DLSS 帧生成。
 
 > [!IMPORTANT]
+> **两个游戏特有事项，动手前先看**
+>
+> - **怪物猎人荒野**：必须先装前置 [REFramework](https://github.com/praydog/REFramework)。下载它的 `MHWILDS.zip`，把 `dinput8.dll`、`openvr_api.dll`、`openxr_loader.dll`、`reframework\` 解压到 `MonsterHunterWilds.exe` 旁边。不装前置，装上本 mod 后游戏必崩（实测过）；装好后 4X 正常。
+> - **绝区零**：必须用 `d3d12` 入口（自带入口名会被它的 HoYoKProtect 改名隔离）。这个 DLL 本仓库已随下载分发，界面上把「代理入口」从「自动」改成 `d3d12.dll` 即可。
+
+> [!WARNING]
 > **带内核级反作弊的游戏属于风险区。** 反作弊可能拦截并隔离代理 DLL，检测记录还可能危及账号。程序会检测到并提示风险，是否部署由你决定，详见[反作弊章节](#反作弊风险评估由你决断)。
 
 **[⬇ 下载最新版](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)** —— 安装包或绿色版任选，都不需要装 .NET。
@@ -389,6 +398,6 @@ dotnet build -c Release
 
 ## 参与
 
-欢迎提交游戏实测结果、反作弊特征或其他改进，见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+欢迎提交游戏实测结果、反作弊特征或其他改进，见 [CONTRIBUTING.md](CONTRIBUTING.md)。提 PR 前提醒一句：本项目的代码和文档由 AI 生成（见页首说明），风格上也按"给 AI 读也清楚"来组织，改动请以能通过 `test/Harness` 的全量测试为准。
 
 本程序只是 dlssg_for_sm86 的**部署工具**，不包含也不修改 Mod 本身。帧生成本身的问题（画质、性能、特定游戏的兼容性）请反馈给 [mod 作者](https://github.com/sdli1995/dlssg_for_sm86/issues)。

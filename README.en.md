@@ -8,11 +8,20 @@
 [![GPU](https://img.shields.io/badge/GPU-RTX%2030%20series%20(SM86)-76B900?style=flat-square)](#)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?style=flat-square)](#)
 
+> [!NOTE]
+> **This project is developed by AI.** The code, the interface text, the documentation and the tests are all AI-generated; the maintainer runs them on real hardware and publishes. Every number and conclusion here comes from an actual run (on-machine logs, controlled tests), but AI output is not free of mistakes — please [open an issue](../../issues) when you find one.
+
 A graphical manager for [dlssg_for_sm86](https://github.com/sdli1995/dlssg_for_sm86). Deploy the mod per game and restore with one click, instead of copying DLLs into game folders by hand.
 
 The mod is a DLL proxy: placing `version.dll` (or one of the alternative entry names) and `dlssg_sm86.ini` **beside the game's rendering executable** enables DLSS frame generation on RTX 30 series (SM86) cards.
 
 > [!IMPORTANT]
+> **Two game-specific prerequisites, read before you start**
+>
+> - **Monster Hunter Wilds**: install the [REFramework](https://github.com/praydog/REFramework) prerequisite first — download its `MHWILDS.zip` and extract `dinput8.dll`, `openvr_api.dll`, `openxr_loader.dll` and `reframework\` next to `MonsterHunterWilds.exe`. Without it, deploying this mod crashes the game every time (measured). With it, 4X works.
+> - **Zenless Zone Zero**: you must use the `d3d12` entry (its HoYoKProtect renames away the bundled entry names). This repository ships that DLL with the download; set “Proxy entry” from *Automatic* to `d3d12.dll` in the interface.
+
+> [!WARNING]
 > **Games with kernel-level anti-cheat are a risk zone.** Such anti-cheat may block or quarantine the proxy DLL, and a recorded detection may put your account at risk. The manager detects it and **warns, leaving the decision to you** — see [the anti-cheat section](#anti-cheat-risk-assessment-your-call).
 
 **[⬇ Download the latest release](https://github.com/BUNNY-19C/DLSSG-30s-manager/releases/latest)** — installer or portable exe; neither needs .NET installed.
@@ -398,6 +407,6 @@ Please read the upstream repository's notes before using the mod, particularly r
 
 ## Contributing
 
-Game compatibility results, anti-cheat signatures and other improvements are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Game compatibility results, anti-cheat signatures and other improvements are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). One note before you open a PR: this project's code and documentation are AI-generated (see the note at the top), and are organised to stay clear for AI readers too, so what counts is that a change passes the full `test/Harness` suite.
 
 This program is a **deployment tool** for dlssg_for_sm86; it does not contain or modify the mod itself. Issues with frame generation itself (image quality, performance, per-game compatibility) belong with the [mod author](https://github.com/sdli1995/dlssg_for_sm86/issues).
